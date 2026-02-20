@@ -1,0 +1,40 @@
+# ========================
+# Node
+# ========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========================
+# Build output
+# ========================
+dist/
+build/
+coverage/
+
+# ========================
+# Environment files
+# ========================
+.env
+.env.*
+!.env.example
+
+# ========================
+# OS / Editor junk
+# ========================
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# ========================
+# Logs
+# ========================
+logs
+*.log
+
+# ========================
+# Supabase local (if used later)
+# ========================
+.supabase/
