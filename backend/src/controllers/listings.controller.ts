@@ -5,6 +5,14 @@ import { env } from "../config/env";
 import { createRlsClient, supabaseAdmin, supabaseAnon } from "../config/supabase";
 import { AppError } from "../errors/app-error";
 
+// Custom interface to extend Express Request with user and accessToken
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+  };
+  accessToken?: string;
+}
+
 const MAX_IMAGES_PER_LISTING = 5;
 
 const LISTING_SELECT = `
@@ -56,7 +64,8 @@ const toFileExtension = (mimetype: string): string => {
 
 const sanitizeSearchTerm = (term: string): string => term.replace(/[,%()]/g, " ").trim();
 
-const getAuthContext = (req: Request): { userId: string; accessToken: string } => {
+// Helper function to get user and accessToken from authenticated request
+const getAuthContext = (req: AuthenticatedRequest): { userId: string; accessToken: string } => {
   if (!req.user?.id || !req.accessToken) {
     throw new AppError(401, "Authentication required");
   }
