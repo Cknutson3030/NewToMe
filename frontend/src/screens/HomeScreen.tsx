@@ -1,88 +1,140 @@
-import React, { useState } from 'react';
-import { View, Text, Button, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Alert } from 'react-native';
 
-// Use your computer's IP address so your phone can connect
+const LISTINGS_URL = 'http://172.16.1.252:3000/listings';
 const HEALTH_URL = 'http://172.16.1.252:3000/health';
+const AUTH_TOKEN = '<YOUR_TOKEN>';
 
-// Add this at the top of your file or inside your component
-const AUTH_TOKEN = '<YOUR_TOKEN>'; // Replace with your actual JWT token
-
-export default function HomeScreen() {
-  // State to store health check result
+export default function HomeScreen({ navigation }: { navigation: any }) {
+  const [listings, setListings] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [health, setHealth] = useState('');
 
-  // State to store listing data
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  // Fetch listings on component mount
+  useEffect(() => {
+    fetchListings();
+  }, []);
 
-  // Function to check backend health
-  const checkHealth = async () => {
+  const fetchListings = async () => {
+    setLoading(true);
     try {
-      // Send GET request to backend health endpoint
-      const res = await fetch(HEALTH_URL);
-      // Parse response as JSON
+      const res = await fetch(LISTINGS_URL, {
+        headers: {
+          'Authorization': `Bearer ${AUTH_TOKEN}`,
+        },
+      });
       const data = await res.json();
-      // Update health state with response status
-      setHealth(data.status || 'Healthy');
+      setListings(data.data || []);
     } catch (err) {
-      // If request fails, show error message
-      setHealth('Error connecting to backend');
+      Alert.alert('Error', 'Failed to fetch listings');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Function to create a listing
-  const createListing = async () => {
-    if (!title.trim()) {
-      Alert.alert('Error', 'Title is required');
-      return;
-    }
-
+  const checkHealth = async () => {
     try {
-      const res = await fetch('http://172.16.1.252:3000/listings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${AUTH_TOKEN}`,
-        },
-        body: JSON.stringify({ title, description }),
-      });
-      if (res.ok) {
-        Alert.alert('Success', 'Listing created!');
-        setTitle('');
-        setDescription('');
-      } else {
-        Alert.alert('Error', 'Failed to create listing');
-      }
+      const res = await fetch(HEALTH_URL);
+      const data = await res.json();
+      setHealth(data.status || 'Healthy');
     } catch (err) {
-      Alert.alert('Error', 'Network error');
+      setHealth('Error connecting to backend');
     }
   };
 
   // Render UI
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      {/* Button to trigger health check */}
-      <Button title="Check Backend Health" onPress={checkHealth} />
-      {/* Show health check result if available */}
-      {health ? <Text style={{ marginTop: 16 }}>{health}</Text> : null}
-      {/* Add this section to your JSX, wherever you want the form to appear */}
-      <View style={{ marginVertical: 24 }}>
-        <Text style={{ fontSize: 18, marginBottom: 8 }}>Create Listing</Text>
-        <TextInput
-          placeholder="Title"
-          value={title}
-          onChangeText={setTitle}
-          style={{ borderWidth: 1, marginBottom: 8, padding: 8 }}
-        />
-        <TextInput
-          placeholder="Description"
-          value={description}
-          onChangeText={setDescription}
-          style={{ borderWidth: 1, marginBottom: 8, padding: 8 }}
-        />
-        <Button title="Create Listing" onPress={createListing} />
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Listings</Text>
+        <Pressable style={styles.createButton} onPress={() => navigation.navigate('CreateListing')}>
+          <Text style={styles.createButtonText}>+ New Listing</Text>
+        </Pressable>
       </View>
-    </View>
+
+      <View style={styles.healthSection}>
+        <Pressable style={styles.healthButton} onPress={checkHealth}>
+          <Text style={styles.healthButtonText}>Check Backend Health</Text>
+        </Pressable>
+        {health ? <Text style={styles.healthText}>{health}</Text> : null}
+      </View>
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#2563EB" style={styles.loader} />
+      ) : (
+        <FlatList
+          data={listings}
+          keyExtractor={(item, index) =>
+            String(item?.id ?? item?._id ?? `${item?.title ?? 'listing'}-${index}`)
+          }
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <View style={styles.listCard}>
+              <Text style={styles.listTitle}>{item.title}</Text>
+              <Text style={styles.listDesc}>{item.description}</Text>
+              <View style={styles.details}>
+                <Text style={styles.detailText}>
+                  <Text style={{ fontWeight: 'bold' }}>Price:</Text> ${item.price}
+                </Text>
+                <Text style={styles.detailText}>
+                  <Text style={{ fontWeight: 'bold' }}>Category:</Text> {item.category}
+                </Text>
+              </View>
+              <View style={styles.details}>
+                <Text style={styles.detailText}>
+                  <Text style={{ fontWeight: 'bold' }}>Location:</Text> {item.location_city}
+                </Text>
+                <Text style={styles.detailText}>
+                  <Text style={{ fontWeight: 'bold' }}>Condition:</Text> {item.item_condition}
+                </Text>
+              </View>
+            </View>
+          )}
+          ListEmptyComponent={<Text style={styles.empty}>No listings yet.</Text>}
+        />
+      )}
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#F7F8FA' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  title: { fontSize: 28, fontWeight: '700' },
+  createButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  createButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  healthSection: { padding: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  healthButton: { backgroundColor: '#10B981', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center' },
+  healthButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  healthText: { marginTop: 8, color: '#059669', fontWeight: '500', textAlign: 'center' },
+  loader: { flex: 1, justifyContent: 'center' },
+  listContent: { padding: 16, paddingBottom: 24 },
+  listCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  listTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6 },
+  listDesc: { fontSize: 14, color: '#6B7280', marginBottom: 8 },
+  details: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6, gap: 12 },
+  detailText: { fontSize: 13, color: '#374151' },
+  empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 24, fontSize: 16 },
+});
