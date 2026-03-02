@@ -2,8 +2,16 @@ import { randomUUID } from "crypto";
 import path from "path";
 import { Request, RequestHandler } from "express";
 import { env } from "../config/env";
-import { createRlsClient, supabaseAdmin, supabaseAnon } from "../config/supabase";
+import { supabaseAdmin, supabaseAnon } from "../config/supabase";
 import { AppError } from "../errors/app-error";
+
+// Custom interface to extend Express Request with user and accessToken
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+  };
+  accessToken?: string;
+}
 
 const MAX_IMAGES_PER_LISTING = 5;
 
@@ -56,12 +64,12 @@ const toFileExtension = (mimetype: string): string => {
 
 const sanitizeSearchTerm = (term: string): string => term.replace(/[,%()]/g, " ").trim();
 
-const getAuthContext = (req: Request): { userId: string; accessToken: string } => {
-  if (!req.user?.id || !req.accessToken) {
+// Helper function to get the authenticated user ID from the request
+const getAuthUserId = (req: AuthenticatedRequest): string => {
+  if (!req.user?.id) {
     throw new AppError(401, "Authentication required");
   }
-
-  return { userId: req.user.id, accessToken: req.accessToken };
+  return req.user.id;
 };
 
 const toNotFound = (message: string, error: { code?: string }): never => {
@@ -138,6 +146,44 @@ export const getListings: RequestHandler = async (req, res, next) => {
   }
 };
 
+export const getMyListings: RequestHandler = async (req, res, next) => {
+  try {
+    const userId = getAuthUserId(req as AuthenticatedRequest);
+    const query = req.query as Record<string, string | number | undefined>;
+    const limit = Number(query.limit ?? 20);
+    const offset = Number(query.offset ?? 0);
+    const sortBy = String(query.sort_by ?? "created_at");
+    const sortOrder = String(query.sort_order ?? "desc");
+
+    let supabaseQuery = supabaseAdmin
+      .from("listings")
+      .select(LISTING_SELECT)
+      .eq("owner_user_id", userId)
+      .eq("is_deleted", false);
+
+    supabaseQuery = supabaseQuery
+      .order(sortBy, { ascending: sortOrder === "asc" })
+      .range(offset, offset + limit - 1);
+
+    const { data, error } = await supabaseQuery;
+
+    if (error) {
+      throw error;
+    }
+
+    res.status(200).json({
+      data: data ?? [],
+      meta: {
+        limit,
+        offset,
+        count: data?.length ?? 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getListingById: RequestHandler = async (req, res, next) => {
   try {
     const id = String(req.params.id);
@@ -162,8 +208,7 @@ export const getListingById: RequestHandler = async (req, res, next) => {
 
 export const createListing: RequestHandler = async (req, res, next) => {
   try {
-    const { userId, accessToken } = getAuthContext(req);
-    const rlsClient = createRlsClient(accessToken);
+    const userId = getAuthUserId(req as AuthenticatedRequest);
 
     const payload = {
       owner_user_id: userId,
@@ -176,7 +221,7 @@ export const createListing: RequestHandler = async (req, res, next) => {
       status: req.body.status ?? "active",
     };
 
-    const { data, error } = await rlsClient
+    const { data, error } = await supabaseAdmin
       .from("listings")
       .insert(payload)
       .select(LISTING_SELECT)
@@ -194,8 +239,7 @@ export const createListing: RequestHandler = async (req, res, next) => {
 
 export const updateListing: RequestHandler = async (req, res, next) => {
   try {
-    const { accessToken } = getAuthContext(req);
-    const rlsClient = createRlsClient(accessToken);
+    const userId = getAuthUserId(req as AuthenticatedRequest);
     const id = String(req.params.id);
 
     const allowedFields = [
@@ -216,10 +260,11 @@ export const updateListing: RequestHandler = async (req, res, next) => {
       }
     }
 
-    const { data, error } = await rlsClient
+    const { data, error } = await supabaseAdmin
       .from("listings")
       .update(updates)
       .eq("id", id)
+      .eq("owner_user_id", userId)
       .eq("is_deleted", false)
       .select(LISTING_SELECT)
       .single();
@@ -236,17 +281,17 @@ export const updateListing: RequestHandler = async (req, res, next) => {
 
 export const deleteListing: RequestHandler = async (req, res, next) => {
   try {
-    const { accessToken } = getAuthContext(req);
-    const rlsClient = createRlsClient(accessToken);
+    const userId = getAuthUserId(req as AuthenticatedRequest);
     const id = String(req.params.id);
 
-    const { error } = await rlsClient
+    const { error } = await supabaseAdmin
       .from("listings")
       .update({
         is_deleted: true,
         status: "deleted",
       })
       .eq("id", id)
+      .eq("owner_user_id", userId)
       .eq("is_deleted", false)
       .select("id")
       .single();
@@ -263,19 +308,24 @@ export const deleteListing: RequestHandler = async (req, res, next) => {
 
 export const uploadListingImages: RequestHandler = async (req, res, next) => {
   try {
-    const { userId, accessToken } = getAuthContext(req);
-    const rlsClient = createRlsClient(accessToken);
+    const userId = getAuthUserId(req as AuthenticatedRequest);
     const listingId = String(req.params.id);
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+
+    // DEBUG: log what we receive
+    console.log("[uploadListingImages] content-type:", req.headers["content-type"]);
+    console.log("[uploadListingImages] files count:", files.length);
+    console.log("[uploadListingImages] body keys:", Object.keys(req.body));
 
     if (files.length === 0) {
       throw new AppError(400, "At least one image file is required");
     }
 
-    const { data: listing, error: listingError } = await rlsClient
+    const { data: listing, error: listingError } = await supabaseAdmin
       .from("listings")
-      .select("id, is_deleted")
+      .select("id, owner_user_id, is_deleted")
       .eq("id", listingId)
+      .eq("owner_user_id", userId)
       .single();
 
     if (listingError) {
@@ -286,7 +336,7 @@ export const uploadListingImages: RequestHandler = async (req, res, next) => {
       throw new AppError(400, "Cannot upload images to a deleted listing");
     }
 
-    const { count, error: countError } = await rlsClient
+    const { count, error: countError } = await supabaseAdmin
       .from("listing_images")
       .select("id", { count: "exact", head: true })
       .eq("listing_id", listingId);
@@ -343,7 +393,7 @@ export const uploadListingImages: RequestHandler = async (req, res, next) => {
         });
       }
 
-      const { data, error } = await rlsClient
+      const { data, error } = await supabaseAdmin
         .from("listing_images")
         .insert(rows)
         .select(IMAGE_SELECT)
@@ -361,6 +411,62 @@ export const uploadListingImages: RequestHandler = async (req, res, next) => {
 
       throw error;
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteListingImage: RequestHandler = async (req, res, next) => {
+  try {
+    const userId = getAuthUserId(req as AuthenticatedRequest);
+    const listingId = String(req.params.id);
+    const imageId = String(req.params.imageId);
+
+    // Verify listing belongs to user
+    const { data: listing, error: listingError } = await supabaseAdmin
+      .from("listings")
+      .select("id")
+      .eq("id", listingId)
+      .eq("owner_user_id", userId)
+      .eq("is_deleted", false)
+      .single();
+
+    if (listingError || !listing) {
+      return res.status(404).json({ error: "Listing not found" });
+    }
+
+    // Get image record to find storage path
+    const { data: image, error: imageError } = await supabaseAdmin
+      .from("listing_images")
+      .select("id, storage_path")
+      .eq("id", imageId)
+      .eq("listing_id", listingId)
+      .eq("owner_user_id", userId)
+      .single();
+
+    if (imageError || !image) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+
+    // Delete from storage
+    if (image.storage_path) {
+      await supabaseAdmin.storage
+        .from(env.SUPABASE_STORAGE_BUCKET)
+        .remove([image.storage_path]);
+    }
+
+    // Delete DB record
+    const { error: deleteError } = await supabaseAdmin
+      .from("listing_images")
+      .delete()
+      .eq("id", imageId)
+      .eq("listing_id", listingId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    res.status(204).send();
   } catch (error) {
     next(error);
   }

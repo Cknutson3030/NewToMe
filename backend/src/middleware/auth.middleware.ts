@@ -2,8 +2,16 @@ import { Request, Response, NextFunction } from "express";
 import { supabaseAnon } from "../config/supabase";
 import { AppError } from "../errors/app-error";
 
+// Custom interface to extend Express Request with user and accessToken
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+  };
+  accessToken?: string;
+}
+
 export async function requireAuth(
-  req: Request,
+  req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction
 ) {

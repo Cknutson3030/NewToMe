@@ -4,8 +4,10 @@ import {
   deleteListing,
   getListingById,
   getListings,
+  getMyListings,
   updateListing,
   uploadListingImages,
+  deleteListingImage,
 } from "../controllers/listings.controller";
 import { requireAuth } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -19,8 +21,15 @@ import {
 
 export const listingsRouter = Router();
 
+// Public routes (no auth required)
 listingsRouter.get("/", validate({ query: listListingsQuerySchema }), getListings);
+
+// Protected: current user's own listings
+listingsRouter.get("/mine", requireAuth, getMyListings);
+
 listingsRouter.get("/:id", validate({ params: listingIdParamsSchema }), getListingById);
+
+// Protected routes (auth required)
 listingsRouter.post("/", requireAuth, validate({ body: createListingBodySchema }), createListing);
 listingsRouter.patch(
   "/:id",
@@ -35,4 +44,10 @@ listingsRouter.post(
   validate({ params: listingIdParamsSchema }),
   listingImagesUpload.array("images", 5),
   uploadListingImages
+);
+listingsRouter.delete(
+  "/:id/images/:imageId",
+  requireAuth,
+  validate({ params: listingIdParamsSchema }),
+  deleteListingImage
 );
