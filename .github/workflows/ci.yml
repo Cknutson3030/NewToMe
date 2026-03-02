@@ -34,7 +34,7 @@ jobs:
 
       # ensure types are valid
       - name: Typecheck backend
-        run: npx tsc -p backend/tsconfig.json --noEmit
+        run: npm run typecheck --prefix backend
 
   # OpenAPI job: depends on backend (needs: backend)
   openapi:
