@@ -100,3 +100,15 @@ export async function uploadListingImages(listingId: string, formData: FormData)
   }
   return res.json();
 }
+
+export async function deleteListingImage(listingId: string, imageId: string) {
+  const headers = authHeaders();
+  const res = await fetch(`${API_BASE_URL}/listings/${listingId}/images/${imageId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to delete image: ${res.status}`);
+  }
+}

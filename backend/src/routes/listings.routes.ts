@@ -7,6 +7,7 @@ import {
   getMyListings,
   updateListing,
   uploadListingImages,
+  deleteListingImage,
 } from "../controllers/listings.controller";
 import { requireAuth } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -43,4 +44,10 @@ listingsRouter.post(
   validate({ params: listingIdParamsSchema }),
   listingImagesUpload.array("images", 5),
   uploadListingImages
+);
+listingsRouter.delete(
+  "/:id/images/:imageId",
+  requireAuth,
+  validate({ params: listingIdParamsSchema }),
+  deleteListingImage
 );

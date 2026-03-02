@@ -415,3 +415,59 @@ export const uploadListingImages: RequestHandler = async (req, res, next) => {
     next(error);
   }
 };
+
+export const deleteListingImage: RequestHandler = async (req, res, next) => {
+  try {
+    const userId = getAuthUserId(req as AuthenticatedRequest);
+    const listingId = String(req.params.id);
+    const imageId = String(req.params.imageId);
+
+    // Verify listing belongs to user
+    const { data: listing, error: listingError } = await supabaseAdmin
+      .from("listings")
+      .select("id")
+      .eq("id", listingId)
+      .eq("owner_user_id", userId)
+      .eq("is_deleted", false)
+      .single();
+
+    if (listingError || !listing) {
+      return res.status(404).json({ error: "Listing not found" });
+    }
+
+    // Get image record to find storage path
+    const { data: image, error: imageError } = await supabaseAdmin
+      .from("listing_images")
+      .select("id, storage_path")
+      .eq("id", imageId)
+      .eq("listing_id", listingId)
+      .eq("owner_user_id", userId)
+      .single();
+
+    if (imageError || !image) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+
+    // Delete from storage
+    if (image.storage_path) {
+      await supabaseAdmin.storage
+        .from(env.SUPABASE_STORAGE_BUCKET)
+        .remove([image.storage_path]);
+    }
+
+    // Delete DB record
+    const { error: deleteError } = await supabaseAdmin
+      .from("listing_images")
+      .delete()
+      .eq("id", imageId)
+      .eq("listing_id", listingId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+};
