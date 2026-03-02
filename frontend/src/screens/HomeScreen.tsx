@@ -112,6 +112,12 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                     <Text style={{ fontWeight: 'bold' }}>Condition:</Text> {item.item_condition}
                   </Text>
                 </View>
+                <Pressable
+                  style={styles.editButton}
+                  onPress={() => navigation.navigate('EditListing', { listing: item })}
+                >
+                  <Text style={styles.editButtonText}>Edit</Text>
+                </Pressable>
               </View>
             );
           }}
@@ -164,5 +170,16 @@ const styles = StyleSheet.create({
   listDesc: { fontSize: 14, color: '#6B7280', marginBottom: 8, paddingHorizontal: 14 },
   details: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6, gap: 12, paddingHorizontal: 14, paddingBottom: 4 },
   detailText: { fontSize: 13, color: '#374151' },
+  editButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginHorizontal: 14,
+    marginTop: 8,
+    marginBottom: 14,
+    alignItems: 'center',
+  },
+  editButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 24, fontSize: 16 },
 });
