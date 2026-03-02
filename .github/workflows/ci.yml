@@ -79,4 +79,4 @@ jobs:
         run: npm ci --prefix frontend
 
       - name: Typecheck frontend
-        run: npx tsc -p frontend/tsconfig.json --noEmit
+        run: npx -p typescript tsc -p frontend/tsconfig.json --noEmit
