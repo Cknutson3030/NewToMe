@@ -1,0 +1,80 @@
+name: CI for backend->openapi->frontend
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Backend job: install, build and typecheck backend
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # install specified Node.js runtime
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          
+      # cache node_modules to speed installs
+      - name: Cache backend deps
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ runner.os }}-backend-${{ hashFiles('backend/package.json') }}
+
+      - name: Install backend deps
+        run: npm ci --prefix backend
+
+      - name: Build backend (tsc)
+        run: npm run build --prefix backend
+
+      # ensure types are valid
+      - name: Typecheck backend
+        run: npx tsc -p backend/tsconfig.json --noEmit
+
+  # OpenAPI job: depends on backend (needs: backend)
+  openapi:
+    needs: backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Spectral lint OpenAPI
+        run: npx @stoplight/spectral-cli@6 lint openapi.yaml
+
+      # validate spec structure and refs
+      - name: Validate OpenAPI (swagger-cli)
+        run: npx swagger-cli@4 validate openapi.yaml
+
+  # Frontend job: depends on openapi (needs: openapi)
+  frontend:
+    needs: openapi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Cache frontend deps
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package.json') }}
+
+      - name: Install frontend deps
+        run: npm ci --prefix frontend
+
+      - name: Typecheck frontend
+        run: npx tsc -p frontend/tsconfig.json --noEmit
