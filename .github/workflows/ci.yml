@@ -49,8 +49,8 @@ jobs:
           node-version: 18
 
       - name: Install OpenAPI tools
-        run: npm ci --prefix .    # requires root package.json with @stoplight/spectral-cli, swagger-cli, openapi-typescript as devDeps
-
+        run: npm install -g @stoplight/spectral-cli swagger-cli
+      
       - name: Spectral lint OpenAPI
         run: npx spectral lint openapi.yaml   # will use .spectral.yaml ruleset
 
@@ -79,4 +79,4 @@ jobs:
         run: npm ci --prefix frontend
 
       - name: Typecheck frontend
-        run: npx tsc -p frontend/tsconfig.json --noEmit
+        run: npx -p typescript tsc -p frontend/tsconfig.json --noEmit
