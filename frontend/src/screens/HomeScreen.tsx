@@ -3,11 +3,12 @@ import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Alert } from 'react-native';
 import { getListings } from '../api/listings';
+import { useAuth } from '../contexts/AuthContext';
 
 const HEALTH_URL = 'http://172.16.1.252:3000/health';
-// AUTH BYPASSED - no token needed (backend auth is disabled)
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
+  const { signOut, user } = useAuth();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -42,7 +43,9 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       p.sort_order = sortOrder;
 
       const res = await getListings(p);
-      const data = Array.isArray(res) ? res : res.data || [];
+      const allData = Array.isArray(res) ? res : res.data || [];
+      // Exclude current user's own listings (they appear in My Listings)
+      const data = user?.id ? allData.filter((item: any) => item.owner_user_id !== user.id) : allData;
 
       if (append) {
         setListings((prev: any[]) => [...prev, ...data]);
@@ -75,7 +78,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       params.sort_by = sortBy;
       params.sort_order = sortOrder;
       const res = await getListings(params);
-      const data = Array.isArray(res) ? res : res.data || [];
+      const allData = Array.isArray(res) ? res : res.data || [];
+      const data = user?.id ? allData.filter((item: any) => item.owner_user_id !== user.id) : allData;
       setListings(data);
       setOffset(data.length);
       setHasMore(data.length === (Number(limit) || 20));
@@ -119,9 +123,17 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <Text style={styles.title}>Listings</Text>
-        <Pressable style={styles.createButton} onPress={() => navigation.navigate('CreateListing')}>
-          <Text style={styles.createButtonText}>+ New Listing</Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', flex: 1, marginLeft: 8 }}>
+          <Pressable style={styles.createButton} onPress={() => navigation.navigate('MyListings')}>
+            <Text style={styles.createButtonText}>My Listings</Text>
+          </Pressable>
+          <Pressable style={styles.createButton} onPress={() => navigation.navigate('CreateListing')}>
+            <Text style={styles.createButtonText}>+ New</Text>
+          </Pressable>
+          <Pressable style={[styles.createButton, { backgroundColor: '#6B7280' }]} onPress={signOut}>
+            <Text style={styles.createButtonText}>Sign Out</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Filters / Search */}
@@ -191,6 +203,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           ListFooterComponent={loadingMore ? <ActivityIndicator style={{margin:12}} /> : null}
           renderItem={({ item }) => {
             const firstImage = item.listing_images?.sort((a: any, b: any) => a.sort_order - b.sort_order)?.[0];
+            const isOwner = user?.id === item.owner_user_id;
             return (
               <View style={styles.listCard}>
                 {firstImage?.image_url && (
@@ -218,12 +231,14 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                     <Text style={{ fontWeight: 'bold' }}>Condition:</Text> {item.item_condition}
                   </Text>
                 </View>
-                <Pressable
-                  style={styles.editButton}
-                  onPress={() => navigation.navigate('EditListing', { listing: item })}
-                >
-                  <Text style={styles.editButtonText}>Edit</Text>
-                </Pressable>
+                {isOwner && (
+                  <Pressable
+                    style={styles.editButton}
+                    onPress={() => navigation.navigate('EditListing', { listing: item })}
+                  >
+                    <Text style={styles.editButtonText}>Edit</Text>
+                  </Pressable>
+                )}
               </View>
             );
           }}

@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet, ScrollView } from 'react-native';
-
-// API URL for updating listings
-const API_BASE_URL = 'http://172.16.1.252:3000';
+import { updateListing as apiUpdateListing, deleteListing as apiDeleteListing } from '../api/listings';
 
 export default function EditListingScreen({ route, navigation }: { route: any; navigation: any }) {
     const { listing } = route.params;
@@ -47,28 +45,12 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
                 return;
             }
 
-            console.log('[updateListing] Updating listing:', listing.id, payload);
-
-            const res = await fetch(`${API_BASE_URL}/listings/${listing.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                Alert.alert('Success', 'Listing updated!');
-                // Go back to home screen
-                navigation.goBack();
-            } else {
-                const errorData = await res.json().catch(() => ({}));
-                Alert.alert('Error', errorData.error || `Failed to update listing: ${res.status}`);
-            }
+            await apiUpdateListing(listing.id, payload);
+            Alert.alert('Success', 'Listing updated!');
+            navigation.goBack();
         } catch (err) {
             console.error('[updateListing] Error:', err);
-            Alert.alert('Error', 'Network error');
+            Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
         } finally {
             setLoading(false);
         }
@@ -87,21 +69,12 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
                     onPress: async () => {
                         setLoading(true);
                         try {
-                            console.log('[deleteListing] Deleting listing:', listing.id);
-                            const res = await fetch(`${API_BASE_URL}/listings/${listing.id}`, {
-                                method: 'DELETE',
-                            });
-
-                            if (res.ok || res.status === 204) {
-                                Alert.alert('Deleted', 'Listing has been deleted.');
-                                navigation.goBack();
-                            } else {
-                                const errorData = await res.json().catch(() => ({}));
-                                Alert.alert('Error', errorData.error || `Failed to delete listing: ${res.status}`);
-                            }
+                            await apiDeleteListing(listing.id);
+                            Alert.alert('Deleted', 'Listing has been deleted.');
+                            navigation.goBack();
                         } catch (err) {
                             console.error('[deleteListing] Error:', err);
-                            Alert.alert('Error', 'Network error');
+                            Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
                         } finally {
                             setLoading(false);
                         }

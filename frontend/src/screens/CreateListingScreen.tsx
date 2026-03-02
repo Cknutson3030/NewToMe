@@ -2,9 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-
-// API URL for creating listings
-const CREATE_URL = 'http://172.16.1.252:3000/listings';
+import { createListing as apiCreateListing, uploadListingImages } from '../api/listings';
 
 // Convert image to JPEG (handles HEIC from iPhone)
 const convertToJpeg = async (uri: string): Promise<{ uri: string; mimeType: string }> => {
@@ -85,7 +83,6 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
             
             // Ensure valid MIME type
             if (!mimeType || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
-                // Convert unknown formats to JPEG
                 console.log(`[uploadImages] Converting unknown format to JPEG for image ${i}`);
                 const converted = await convertToJpeg(uri);
                 uri = converted.uri;
@@ -94,9 +91,6 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
             
             const fileName = `photo_${Date.now()}_${i}.jpg`;
             
-            console.log(`[uploadImages] Image ${i}:`, { uri, fileName, mimeType });
-            
-            // React Native FormData requires this exact format
             formData.append('images', {
                 uri: uri,
                 name: fileName,
@@ -105,26 +99,11 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
         }
 
         try {
-            console.log('[uploadImages] Sending to:', `http://172.16.1.252:3000/listings/${listingId}/images`);
-            const res = await fetch(`http://172.16.1.252:3000/listings/${listingId}/images`, {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                },
-                body: formData,
-            });
-
-            const responseText = await res.text();
-            console.log('[uploadImages] Response:', res.status, responseText);
-
-            if (res.ok) {
-                Alert.alert('Success', 'Images uploaded!');
-            } else {
-                Alert.alert('Error', `Failed to upload images: ${res.status} - ${responseText}`);
-            }
+            await uploadListingImages(listingId, formData);
+            Alert.alert('Success', 'Images uploaded!');
         } catch (err) {
             console.error('[uploadImages] Error:', err);
-            Alert.alert('Error', `Network error: ${err instanceof Error ? err.message : 'Unknown'}`);
+            Alert.alert('Error', `Failed to upload images: ${err instanceof Error ? err.message : 'Unknown'}`);
         }
     };
 
@@ -137,43 +116,32 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
         }
 
         try {
-            const res = await fetch(CREATE_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    title,
-                    description,
-                    price: price ? parseFloat(price) : null,
-                    category,
-                    location_city: locationCity,
-                    item_condition: itemCondition,
-                }),
+            const data = await apiCreateListing({
+                title,
+                description,
+                price: price ? parseFloat(price) : null,
+                category,
+                location_city: locationCity,
+                item_condition: itemCondition,
             });
 
-            if (res.ok) {
-                const data = await res.json();
-                Alert.alert('Success', 'Listing created!');
-                // Upload images if any
-                if (images.length > 0) {
-                    await uploadImages(data.data.id);
-                }
-                // Clear form
-                setTitle('');
-                setDescription('');
-                setPrice('');
-                setCategory('');
-                setLocationCity('');
-                setItemCondition('');
-                setImages([]);
-                // Go back to home screen
-                navigation.goBack();
-            } else {
-                Alert.alert('Error', 'Failed to create listing');
+            Alert.alert('Success', 'Listing created!');
+            // Upload images if any
+            if (images.length > 0) {
+                await uploadImages(data.data.id);
             }
+            // Clear form
+            setTitle('');
+            setDescription('');
+            setPrice('');
+            setCategory('');
+            setLocationCity('');
+            setItemCondition('');
+            setImages([]);
+            // Go back to home screen
+            navigation.goBack();
         } catch (err) {
-            Alert.alert('Error', 'Network error');
+            Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
         }
     };
 

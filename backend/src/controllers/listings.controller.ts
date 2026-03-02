@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import path from "path";
 import { Request, RequestHandler } from "express";
 import { env } from "../config/env";
-import { createRlsClient, supabaseAdmin, supabaseAnon } from "../config/supabase";
+import { supabaseAdmin, supabaseAnon } from "../config/supabase";
 import { AppError } from "../errors/app-error";
 
 // Custom interface to extend Express Request with user and accessToken
@@ -64,19 +64,12 @@ const toFileExtension = (mimetype: string): string => {
 
 const sanitizeSearchTerm = (term: string): string => term.replace(/[,%()]/g, " ").trim();
 
-// Helper function to get user and accessToken from authenticated request
-// ORIGINAL VERSION - COMMENTED OUT FOR TESTING
-// const getAuthContext = (req: AuthenticatedRequest): { userId: string; accessToken: string } => {
-//   if (!req.user?.id || !req.accessToken) {
-//     throw new AppError(401, "Authentication required");
-//   }
-//   return { userId: req.user.id, accessToken: req.accessToken };
-// };
-
-// TEMPORARY MOCK VERSION FOR TESTING - REMOVE AND RESTORE ORIGINAL WHEN AUTH IS READY
-const getAuthContext = (_req: AuthenticatedRequest): { userId: string; accessToken: string } => {
-  // Return mock values for testing (no auth required)
-  return { userId: "test-user-id", accessToken: "test-token" };
+// Helper function to get the authenticated user ID from the request
+const getAuthUserId = (req: AuthenticatedRequest): string => {
+  if (!req.user?.id) {
+    throw new AppError(401, "Authentication required");
+  }
+  return req.user.id;
 };
 
 const toNotFound = (message: string, error: { code?: string }): never => {
@@ -153,6 +146,44 @@ export const getListings: RequestHandler = async (req, res, next) => {
   }
 };
 
+export const getMyListings: RequestHandler = async (req, res, next) => {
+  try {
+    const userId = getAuthUserId(req as AuthenticatedRequest);
+    const query = req.query as Record<string, string | number | undefined>;
+    const limit = Number(query.limit ?? 20);
+    const offset = Number(query.offset ?? 0);
+    const sortBy = String(query.sort_by ?? "created_at");
+    const sortOrder = String(query.sort_order ?? "desc");
+
+    let supabaseQuery = supabaseAdmin
+      .from("listings")
+      .select(LISTING_SELECT)
+      .eq("owner_user_id", userId)
+      .eq("is_deleted", false);
+
+    supabaseQuery = supabaseQuery
+      .order(sortBy, { ascending: sortOrder === "asc" })
+      .range(offset, offset + limit - 1);
+
+    const { data, error } = await supabaseQuery;
+
+    if (error) {
+      throw error;
+    }
+
+    res.status(200).json({
+      data: data ?? [],
+      meta: {
+        limit,
+        offset,
+        count: data?.length ?? 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getListingById: RequestHandler = async (req, res, next) => {
   try {
     const id = String(req.params.id);
@@ -177,10 +208,7 @@ export const getListingById: RequestHandler = async (req, res, next) => {
 
 export const createListing: RequestHandler = async (req, res, next) => {
   try {
-    // TEMPORARY: Use supabaseAdmin for testing (bypasses RLS)
-    // RESTORE: const { userId, accessToken } = getAuthContext(req);
-    // RESTORE: const rlsClient = createRlsClient(accessToken);
-    const userId = "00000000-0000-0000-0000-000000000000"; // Temporary test user ID
+    const userId = getAuthUserId(req as AuthenticatedRequest);
 
     const payload = {
       owner_user_id: userId,
@@ -193,7 +221,6 @@ export const createListing: RequestHandler = async (req, res, next) => {
       status: req.body.status ?? "active",
     };
 
-    // TEMPORARY: Use supabaseAdmin instead of rlsClient
     const { data, error } = await supabaseAdmin
       .from("listings")
       .insert(payload)
@@ -212,9 +239,7 @@ export const createListing: RequestHandler = async (req, res, next) => {
 
 export const updateListing: RequestHandler = async (req, res, next) => {
   try {
-    // TEMP: bypass auth for testing
-    // const { accessToken } = getAuthContext(req);
-    // const rlsClient = createRlsClient(accessToken);
+    const userId = getAuthUserId(req as AuthenticatedRequest);
     const id = String(req.params.id);
 
     const allowedFields = [
@@ -235,11 +260,11 @@ export const updateListing: RequestHandler = async (req, res, next) => {
       }
     }
 
-    // TEMP: use supabaseAdmin for testing
     const { data, error } = await supabaseAdmin
       .from("listings")
       .update(updates)
       .eq("id", id)
+      .eq("owner_user_id", userId)
       .eq("is_deleted", false)
       .select(LISTING_SELECT)
       .single();
@@ -256,12 +281,9 @@ export const updateListing: RequestHandler = async (req, res, next) => {
 
 export const deleteListing: RequestHandler = async (req, res, next) => {
   try {
-    // TEMP: bypass auth for testing
-    // const { accessToken } = getAuthContext(req);
-    // const rlsClient = createRlsClient(accessToken);
+    const userId = getAuthUserId(req as AuthenticatedRequest);
     const id = String(req.params.id);
 
-    // TEMP: use supabaseAdmin for testing
     const { error } = await supabaseAdmin
       .from("listings")
       .update({
@@ -269,6 +291,7 @@ export const deleteListing: RequestHandler = async (req, res, next) => {
         status: "deleted",
       })
       .eq("id", id)
+      .eq("owner_user_id", userId)
       .eq("is_deleted", false)
       .select("id")
       .single();
@@ -285,10 +308,7 @@ export const deleteListing: RequestHandler = async (req, res, next) => {
 
 export const uploadListingImages: RequestHandler = async (req, res, next) => {
   try {
-    // TEMP: bypass auth for testing
-    // const { userId, accessToken } = getAuthContext(req);
-    // const rlsClient = createRlsClient(accessToken);
-    const userId = "00000000-0000-0000-0000-000000000000";
+    const userId = getAuthUserId(req as AuthenticatedRequest);
     const listingId = String(req.params.id);
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
 
@@ -301,11 +321,11 @@ export const uploadListingImages: RequestHandler = async (req, res, next) => {
       throw new AppError(400, "At least one image file is required");
     }
 
-    // TEMP: use supabaseAdmin for testing
     const { data: listing, error: listingError } = await supabaseAdmin
       .from("listings")
-      .select("id, is_deleted")
+      .select("id, owner_user_id, is_deleted")
       .eq("id", listingId)
+      .eq("owner_user_id", userId)
       .single();
 
     if (listingError) {
@@ -316,7 +336,6 @@ export const uploadListingImages: RequestHandler = async (req, res, next) => {
       throw new AppError(400, "Cannot upload images to a deleted listing");
     }
 
-    // TEMP: use supabaseAdmin for testing
     const { count, error: countError } = await supabaseAdmin
       .from("listing_images")
       .select("id", { count: "exact", head: true })
@@ -374,7 +393,6 @@ export const uploadListingImages: RequestHandler = async (req, res, next) => {
         });
       }
 
-      // TEMP: use supabaseAdmin for testing
       const { data, error } = await supabaseAdmin
         .from("listing_images")
         .insert(rows)
