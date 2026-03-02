@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator, Image, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator, Image, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Alert } from 'react-native';
+import { getListings } from '../api/listings';
 
-const LISTINGS_URL = 'http://172.16.1.252:3000/listings';
 const HEALTH_URL = 'http://172.16.1.252:3000/health';
 // AUTH BYPASSED - no token needed (backend auth is disabled)
 
@@ -12,37 +12,97 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [health, setHealth] = useState('');
+  // filters
+  const [q, setQ] = useState('');
+  const [category, setCategory] = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [itemCondition, setItemCondition] = useState('');
+  const [locationCity, setLocationCity] = useState('');
+  const [sortBy, setSortBy] = useState<'created_at'|'price'|'title'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc'|'desc'>('desc');
+  const [limit, setLimit] = useState<string>(''); // keep as string so editing doesn't coerce to number
+  const [offset, setOffset] = useState<number>(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const debounceRef = useRef<any>(null);
 
   // Fetch listings on component mount
   useEffect(() => {
     fetchListings();
   }, []);
 
-  const fetchListings = async () => {
-    setLoading(true);
+  const fetchListings = async (params?: Record<string, any>, append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true);
     try {
-      const res = await fetch(LISTINGS_URL);
-      const data = await res.json();
-      setListings(data.data || []);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to fetch listings');
+      const p: Record<string, any> = { ...(params || {}) };
+      if (limit !== '' && limit !== null && limit !== undefined) p.limit = Number(limit);
+      p.offset = append ? offset : 0;
+      p.sort_by = sortBy;
+      p.sort_order = sortOrder;
+
+      const res = await getListings(p);
+      const data = Array.isArray(res) ? res : res.data || [];
+
+      if (append) {
+        setListings((prev: any[]) => [...prev, ...data]);
+        setOffset((prev) => prev + data.length);
+      } else {
+        setListings(data);
+        setOffset(data.length);
+      }
+
+      setHasMore(data.length === (Number(limit) || 20));
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to fetch listings');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const res = await fetch(LISTINGS_URL);
-      const data = await res.json();
-      setListings(data.data || []);
+      setOffset(0);
+      const params: Record<string, any> = {};
+      if (q) params.q = q;
+      if (category) params.category = category;
+      if (minPrice) params.min_price = minPrice;
+      if (maxPrice) params.max_price = maxPrice;
+      if (itemCondition) params.item_condition = itemCondition;
+      if (locationCity) params.location_city = locationCity;
+      params.sort_by = sortBy;
+      params.sort_order = sortOrder;
+      const res = await getListings(params);
+      const data = Array.isArray(res) ? res : res.data || [];
+      setListings(data);
+      setOffset(data.length);
+      setHasMore(data.length === (Number(limit) || 20));
     } catch (err) {
       Alert.alert('Error', 'Failed to refresh listings');
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [q, category, minPrice, maxPrice, itemCondition, locationCity, sortBy, sortOrder, limit]);
+
+  // debounce filters
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const params: Record<string, any> = {};
+      if (q) params.q = q;
+      if (category) params.category = category;
+      if (minPrice) params.min_price = minPrice;
+      if (maxPrice) params.max_price = maxPrice;
+      if (itemCondition) params.item_condition = itemCondition;
+      if (locationCity) params.location_city = locationCity;
+      params.sort_by = sortBy;
+      params.sort_order = sortOrder;
+      fetchListings(params, false);
+    }, 500);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [q, category, minPrice, maxPrice, itemCondition, locationCity, sortBy, sortOrder, limit]);
 
   const checkHealth = async () => {
     try {
@@ -64,6 +124,36 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         </Pressable>
       </View>
 
+      {/* Filters / Search */}
+      <View style={styles.filtersContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search listings..."
+          value={q}
+          onChangeText={setQ}
+          returnKeyType="search"
+        />
+        <View style={styles.filterRow}>
+          <TextInput style={styles.smallInput} placeholder="Category" value={category} onChangeText={setCategory} />
+          <TextInput style={styles.smallInput} placeholder="Condition" value={itemCondition} onChangeText={setItemCondition} />
+          <TextInput style={styles.smallInput} placeholder="City" value={locationCity} onChangeText={setLocationCity} />
+        </View>
+        <View style={[styles.filterRow, { marginTop: 8 }]}> 
+          <TextInput style={styles.smallInput} placeholder="Min $" keyboardType="numeric" value={minPrice} onChangeText={setMinPrice} />
+          <TextInput style={styles.smallInput} placeholder="Max $" keyboardType="numeric" value={maxPrice} onChangeText={setMaxPrice} />
+          <TextInput style={styles.smallInput} placeholder="Limit" keyboardType="numeric" value={limit} onChangeText={setLimit} />
+        </View>
+        <View style={[styles.filterRow, { marginTop: 8, alignItems: 'center' }]}> 
+          <Pressable style={styles.sortButton} onPress={() => setSortBy(sortBy === 'created_at' ? 'price' : sortBy === 'price' ? 'title' : 'created_at')}>
+            <Text style={styles.sortButtonText}>Sort: {sortBy}</Text>
+          </Pressable>
+          <Pressable style={styles.sortButton} onPress={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}>
+            <Text style={styles.sortButtonText}>Order: {sortOrder}</Text>
+          </Pressable>
+          <Button title="Apply" onPress={() => fetchListings({ q, category, item_condition: itemCondition, location_city: locationCity, min_price: minPrice, max_price: maxPrice, sort_by: sortBy, sort_order: sortOrder }, false)} />
+        </View>
+      </View>
+
       <View style={styles.healthSection}>
         <Pressable style={styles.healthButton} onPress={checkHealth}>
           <Text style={styles.healthButtonText}>Check Backend Health</Text>
@@ -83,6 +173,22 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
           }
+          onEndReachedThreshold={0.5}
+          onEndReached={() => {
+            if (!loadingMore && hasMore) {
+              const params: Record<string, any> = {};
+              if (q) params.q = q;
+              if (category) params.category = category;
+              if (minPrice) params.min_price = minPrice;
+              if (maxPrice) params.max_price = maxPrice;
+              if (itemCondition) params.item_condition = itemCondition;
+              if (locationCity) params.location_city = locationCity;
+              params.sort_by = sortBy;
+              params.sort_order = sortOrder;
+              fetchListings(params, true);
+            }
+          }}
+          ListFooterComponent={loadingMore ? <ActivityIndicator style={{margin:12}} /> : null}
           renderItem={({ item }) => {
             const firstImage = item.listing_images?.sort((a: any, b: any) => a.sort_order - b.sort_order)?.[0];
             return (
@@ -181,5 +287,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   editButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  filtersContainer: { padding: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  searchInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 8, marginBottom: 8, backgroundColor: '#fff' },
+  filterRow: { flexDirection: 'row', gap: 8 },
+  smallInput: { flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 8, backgroundColor: '#fff' },
+  sortButton: { backgroundColor: '#F3F4F6', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, marginRight: 8 },
+  sortButtonText: { color: '#111827', fontWeight: '600' },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 24, fontSize: 16 },
 });
