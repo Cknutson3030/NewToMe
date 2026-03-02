@@ -49,10 +49,10 @@ jobs:
           node-version: 18
 
       - name: Install OpenAPI tools
-        run: npm install --prefix . --save-dev @stoplight/spectral-cli@6 swagger-cli openapi-typescript
+        run: npm ci --prefix .    # requires root package.json with @stoplight/spectral-cli, swagger-cli, openapi-typescript as devDeps
 
       - name: Spectral lint OpenAPI
-        run: npx spectral lint openapi.yaml
+        run: npx spectral lint openapi.yaml   # will use .spectral.yaml ruleset
 
       - name: Validate OpenAPI (swagger-cli)
         run: npx swagger-cli validate openapi.yaml
