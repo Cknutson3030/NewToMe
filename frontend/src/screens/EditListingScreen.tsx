@@ -74,6 +74,43 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
         }
     };
 
+    // Function to delete the listing
+    const deleteListing = async () => {
+        Alert.alert(
+            'Delete Listing',
+            'Are you sure you want to delete this listing? This action cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setLoading(true);
+                        try {
+                            console.log('[deleteListing] Deleting listing:', listing.id);
+                            const res = await fetch(`${API_BASE_URL}/listings/${listing.id}`, {
+                                method: 'DELETE',
+                            });
+
+                            if (res.ok || res.status === 204) {
+                                Alert.alert('Deleted', 'Listing has been deleted.');
+                                navigation.goBack();
+                            } else {
+                                const errorData = await res.json().catch(() => ({}));
+                                Alert.alert('Error', errorData.error || `Failed to delete listing: ${res.status}`);
+                            }
+                        } catch (err) {
+                            console.error('[deleteListing] Error:', err);
+                            Alert.alert('Error', 'Network error');
+                        } finally {
+                            setLoading(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     return (
         <ScrollView style={styles.container}>
             <Text style={styles.header}>Edit Listing</Text>
@@ -143,6 +180,15 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
                     disabled={loading}
                 />
             </View>
+
+            <View style={styles.deleteSection}>
+                <Button
+                    title="Delete Listing"
+                    onPress={deleteListing}
+                    color="#DC2626"
+                    disabled={loading}
+                />
+            </View>
         </ScrollView>
     );
 }
@@ -185,6 +231,13 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         marginTop: 16,
+        marginBottom: 16,
+    },
+    deleteSection: {
+        marginTop: 16,
         marginBottom: 32,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#E5E7EB',
     },
 });
