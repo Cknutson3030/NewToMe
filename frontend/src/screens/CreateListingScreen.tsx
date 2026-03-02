@@ -1,9 +1,20 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 // API URL for creating listings
 const CREATE_URL = 'http://172.16.1.252:3000/listings';
+
+// Convert image to JPEG (handles HEIC from iPhone)
+const convertToJpeg = async (uri: string): Promise<{ uri: string; mimeType: string }> => {
+    const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [], // no transformations
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    return { uri: result.uri, mimeType: 'image/jpeg' };
+};
 
 export default function CreateListingScreen({ navigation }: { navigation: any }) {
     // State for form fields
@@ -59,43 +70,47 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
         if (images.length === 0) return;
 
         const formData = new FormData();
-        images.forEach((img, i) => {
-            const uri = img.uri;
+        for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            let uri = img.uri;
+            let mimeType = img.mimeType || '';
             
-            // Try to get MIME type from asset (Expo provides this), or detect from URI
-            let mimeType = img.mimeType; // Expo ImagePicker provides this
-            
-            if (!mimeType || !mimeType.startsWith('image/')) {
-                // Fallback: detect from file extension
-                const uriParts = uri.split('.');
-                const fileExtension = (uriParts[uriParts.length - 1] || 'jpg').toLowerCase().split('?')[0];
-                
-                const mimeTypes: Record<string, string> = {
-                    jpg: 'image/jpeg',
-                    jpeg: 'image/jpeg',
-                    png: 'image/png',
-                    webp: 'image/webp',
-                };
-                mimeType = mimeTypes[fileExtension] || 'image/jpeg';
+            // Convert HEIC/HEIF (iPhone default) to JPEG
+            if (mimeType === 'image/heic' || mimeType === 'image/heif' || uri.toLowerCase().includes('.heic')) {
+                console.log(`[uploadImages] Converting HEIC to JPEG for image ${i}`);
+                const converted = await convertToJpeg(uri);
+                uri = converted.uri;
+                mimeType = converted.mimeType;
             }
             
-            // Ensure fileName has proper extension
-            const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
-            const fileName = img.fileName || `photo_${Date.now()}_${i}.${ext}`;
+            // Ensure valid MIME type
+            if (!mimeType || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+                // Convert unknown formats to JPEG
+                console.log(`[uploadImages] Converting unknown format to JPEG for image ${i}`);
+                const converted = await convertToJpeg(uri);
+                uri = converted.uri;
+                mimeType = converted.mimeType;
+            }
             
-            console.log(`[uploadImages] Image ${i}:`, { uri, fileName, mimeType, assetMime: img.mimeType, assetType: img.type });
+            const fileName = `photo_${Date.now()}_${i}.jpg`;
             
-            formData.append('images', {  
+            console.log(`[uploadImages] Image ${i}:`, { uri, fileName, mimeType });
+            
+            // React Native FormData requires this exact format
+            formData.append('images', {
                 uri: uri,
                 name: fileName,
                 type: mimeType,
-            } as any);
-        });
+            } as unknown as Blob);
+        }
 
         try {
             console.log('[uploadImages] Sending to:', `http://172.16.1.252:3000/listings/${listingId}/images`);
             const res = await fetch(`http://172.16.1.252:3000/listings/${listingId}/images`, {
                 method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                },
                 body: formData,
             });
 

@@ -15,11 +15,11 @@ export const validate = (schemas: ValidationSchemas): RequestHandler => {
       }
 
       if (schemas.query) {
-        req.query = schemas.query.parse(req.query) as unknown as typeof req.query;
+        Object.assign(req.query, schemas.query.parse(req.query));
       }
 
       if (schemas.params) {
-        req.params = schemas.params.parse(req.params) as unknown as typeof req.params;
+        Object.assign(req.params, schemas.params.parse(req.params));
       }
 
       next();

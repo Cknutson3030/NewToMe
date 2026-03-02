@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator, Image, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Alert } from 'react-native';
 
 const LISTINGS_URL = 'http://172.16.1.252:3000/listings';
 const HEALTH_URL = 'http://172.16.1.252:3000/health';
-const AUTH_TOKEN = '<YOUR_TOKEN>';
+// AUTH BYPASSED - no token needed (backend auth is disabled)
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [health, setHealth] = useState('');
 
   // Fetch listings on component mount
@@ -20,11 +21,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const fetchListings = async () => {
     setLoading(true);
     try {
-      const res = await fetch(LISTINGS_URL, {
-        headers: {
-          'Authorization': `Bearer ${AUTH_TOKEN}`,
-        },
-      });
+      const res = await fetch(LISTINGS_URL);
       const data = await res.json();
       setListings(data.data || []);
     } catch (err) {
@@ -33,6 +30,19 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       setLoading(false);
     }
   };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch(LISTINGS_URL);
+      const data = await res.json();
+      setListings(data.data || []);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to refresh listings');
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const checkHealth = async () => {
     try {
@@ -61,7 +71,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         {health ? <Text style={styles.healthText}>{health}</Text> : null}
       </View>
 
-      {loading ? (
+      {loading && !refreshing ? (
         <ActivityIndicator size="large" color="#2563EB" style={styles.loader} />
       ) : (
         <FlatList
@@ -70,28 +80,41 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             String(item?.id ?? item?._id ?? `${item?.title ?? 'listing'}-${index}`)
           }
           contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <View style={styles.listCard}>
-              <Text style={styles.listTitle}>{item.title}</Text>
-              <Text style={styles.listDesc}>{item.description}</Text>
-              <View style={styles.details}>
-                <Text style={styles.detailText}>
-                  <Text style={{ fontWeight: 'bold' }}>Price:</Text> ${item.price}
-                </Text>
-                <Text style={styles.detailText}>
-                  <Text style={{ fontWeight: 'bold' }}>Category:</Text> {item.category}
-                </Text>
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
+          }
+          renderItem={({ item }) => {
+            const firstImage = item.listing_images?.sort((a: any, b: any) => a.sort_order - b.sort_order)?.[0];
+            return (
+              <View style={styles.listCard}>
+                {firstImage?.image_url && (
+                  <Image
+                    source={{ uri: firstImage.image_url }}
+                    style={styles.listImage}
+                    resizeMode="cover"
+                  />
+                )}
+                <Text style={styles.listTitle}>{item.title}</Text>
+                <Text style={styles.listDesc}>{item.description}</Text>
+                <View style={styles.details}>
+                  <Text style={styles.detailText}>
+                    <Text style={{ fontWeight: 'bold' }}>Price:</Text> ${item.price}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    <Text style={{ fontWeight: 'bold' }}>Category:</Text> {item.category}
+                  </Text>
+                </View>
+                <View style={styles.details}>
+                  <Text style={styles.detailText}>
+                    <Text style={{ fontWeight: 'bold' }}>Location:</Text> {item.location_city}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    <Text style={{ fontWeight: 'bold' }}>Condition:</Text> {item.item_condition}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.details}>
-                <Text style={styles.detailText}>
-                  <Text style={{ fontWeight: 'bold' }}>Location:</Text> {item.location_city}
-                </Text>
-                <Text style={styles.detailText}>
-                  <Text style={{ fontWeight: 'bold' }}>Condition:</Text> {item.item_condition}
-                </Text>
-              </View>
-            </View>
-          )}
+            );
+          }}
           ListEmptyComponent={<Text style={styles.empty}>No listings yet.</Text>}
         />
       )}
@@ -127,14 +150,19 @@ const styles = StyleSheet.create({
   listCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 14,
+    overflow: 'hidden',
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  listTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6 },
-  listDesc: { fontSize: 14, color: '#6B7280', marginBottom: 8 },
-  details: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6, gap: 12 },
+  listImage: {
+    width: '100%',
+    height: 180,
+    backgroundColor: '#E5E7EB',
+  },
+  listTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6, paddingHorizontal: 14, paddingTop: 12 },
+  listDesc: { fontSize: 14, color: '#6B7280', marginBottom: 8, paddingHorizontal: 14 },
+  details: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6, gap: 12, paddingHorizontal: 14, paddingBottom: 4 },
   detailText: { fontSize: 13, color: '#374151' },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 24, fontSize: 16 },
 });
