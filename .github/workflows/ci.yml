@@ -48,12 +48,14 @@ jobs:
         with:
           node-version: 18
 
-      - name: Spectral lint OpenAPI
-        run: npx @stoplight/spectral-cli@6 lint openapi.yaml
+      - name: Install OpenAPI tools
+        run: npm install --prefix . --save-dev @stoplight/spectral-cli@6 swagger-cli openapi-typescript
 
-      # validate spec structure and refs
+      - name: Spectral lint OpenAPI
+        run: npx spectral lint openapi.yaml
+
       - name: Validate OpenAPI (swagger-cli)
-        run: npx swagger-cli@4 validate openapi.yaml
+        run: npx swagger-cli validate openapi.yaml
 
   # Frontend job: depends on openapi (needs: openapi)
   frontend:
