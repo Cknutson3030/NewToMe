@@ -1,7 +1,10 @@
 //npx expo start uses .env.development
 // with EAS build, it uses .env.production
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL!;
+  process.env.EXPO_PUBLIC_API_BASE_URL ||
+  "https://newtomesask-bjc6bseke7a4edaz.canadacentral-01.azurewebsites.net";
+
+console.log("API_BASE_URL =", API_BASE_URL);
 
 // ---- Token store (set by AuthContext, read by API helpers) ----
 let _accessToken: string | null = null;
