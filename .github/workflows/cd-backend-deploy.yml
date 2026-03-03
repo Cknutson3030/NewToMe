@@ -1,0 +1,39 @@
+name: Deploy Backend to Azure
+
+on:
+  push:
+    branches:
+      - main   # change to main if you want production deploy
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2️⃣ Setup Node
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
+        run: npm install
+        working-directory: backend
+
+      # 4️⃣ Build TypeScript
+      - name: Build
+        run: npm run build
+        working-directory: backend
+
+      # 5️⃣ Deploy to Azure Web App
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: newtomesask-bjc6bseke7a4edaz
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: backend
