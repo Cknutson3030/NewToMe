@@ -1,4 +1,7 @@
-export const API_BASE_URL = (process.env.API_BASE_URL as string) || 'http://172.16.1.252:3000';
+//npx expo start uses .env.development
+// with EAS build, it uses .env.production
+export const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL!;
 
 // ---- Token store (set by AuthContext, read by API helpers) ----
 let _accessToken: string | null = null;
