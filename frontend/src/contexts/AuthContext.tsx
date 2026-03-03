@@ -1,7 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { setApiAccessToken } from '../api/listings';
-
-const API_BASE_URL = (process.env.API_BASE_URL as string) || 'http://172.16.1.252:3000';
+import { setApiAccessToken, API_BASE_URL } from '../api/listings';
 
 interface AuthUser {
   id: string;
