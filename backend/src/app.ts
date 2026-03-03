@@ -11,7 +11,7 @@ import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 export const app = express();
 
 app.use(helmet());
-app.use(cors());
+app.use(cors({ origin: "*" })); // temporary for debug; lock down in prod
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("dev"));
 
