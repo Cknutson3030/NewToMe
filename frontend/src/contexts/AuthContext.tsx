@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { setApiAccessToken, API_BASE_URL } from '../api/listings';
+import { setChatAccessToken } from '../api/chat';
 
 interface AuthUser {
   id: string;
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Keep the API layer's token in sync
   useEffect(() => {
     setApiAccessToken(accessToken);
+    setChatAccessToken(accessToken);
   }, [accessToken]);
 
   // ---- helpers ----

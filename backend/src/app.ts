@@ -6,6 +6,7 @@ import morgan from "morgan";
 import { healthRouter } from "./routes/health.routes";
 import { authRouter } from "./routes/auth.routes";
 import { listingsRouter } from "./routes/listings.routes";
+import { chatRouter } from "./routes/chat.routes";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
 export const app = express();
@@ -18,6 +19,7 @@ app.use(morgan("dev"));
 app.use("/health", healthRouter);
 app.use("/auth", authRouter);
 app.use("/listings", listingsRouter);
+app.use("/conversations", chatRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -9,6 +9,8 @@ import HomeScreen from '../screens/HomeScreen';
 import MyListingsScreen from '../screens/MyListingsScreen';
 import CreateListingScreen from '../screens/CreateListingScreen';
 import EditListingScreen from '../screens/EditListingScreen';
+import ConversationsScreen from '../screens/ConversationsScreen';
+import ChatScreen from '../screens/ChatScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -33,6 +35,8 @@ export default function AppNavigator() {
             <Stack.Screen name="MyListings" component={MyListingsScreen} options={{ title: 'My Listings' }} />
             <Stack.Screen name="CreateListing" component={CreateListingScreen} />
             <Stack.Screen name="EditListing" component={EditListingScreen} />
+            <Stack.Screen name="Conversations" component={ConversationsScreen} options={{ title: 'Messages' }} />
+            <Stack.Screen name="Chat" component={ChatScreen} />
           </>
         ) : (
           // Not authenticated — show auth screens
