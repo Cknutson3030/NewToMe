@@ -80,16 +80,27 @@ export default function ChatScreen({ route, navigation }: { route: any; navigati
     }
   };
 
-  const renderMessage = ({ item }: { item: any }) => {
+  const isBuyer = conversation.buyer_user_id === user?.id;
+  const otherLabel = isBuyer ? 'Seller' : 'Buyer';
+
+  const renderMessage = ({ item, index }: { item: any; index: number }) => {
     const isMe = item.sender_user_id === user?.id;
+    // Show label above the first message in each group from the other person
+    const prevItem = messages[index - 1];
+    const showLabel = !isMe && (!prevItem || prevItem.sender_user_id !== item.sender_user_id);
     return (
-      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
-        <Text style={[styles.bubbleText, isMe ? styles.bubbleTextMe : styles.bubbleTextThem]}>
-          {item.body}
-        </Text>
-        <Text style={[styles.bubbleTime, isMe ? styles.bubbleTimeMe : styles.bubbleTimeThem]}>
-          {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </Text>
+      <View style={isMe ? styles.rowMe : styles.rowThem}>
+        {showLabel && (
+          <Text style={styles.senderLabel}>{otherLabel}</Text>
+        )}
+        <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+          <Text style={[styles.bubbleText, isMe ? styles.bubbleTextMe : styles.bubbleTextThem]}>
+            {item.body}
+          </Text>
+          <Text style={[styles.bubbleTime, isMe ? styles.bubbleTimeMe : styles.bubbleTimeThem]}>
+            {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
       </View>
     );
   };
@@ -148,20 +159,26 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   loader: { marginTop: 40 },
   messageList: { padding: 16, paddingBottom: 8 },
+  rowMe: { alignItems: 'flex-end', marginBottom: 8 },
+  rowThem: { alignItems: 'flex-start', marginBottom: 8 },
+  senderLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 3,
+    marginLeft: 4,
+  },
   bubble: {
     maxWidth: '80%',
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    marginBottom: 8,
   },
   bubbleMe: {
-    alignSelf: 'flex-end',
     backgroundColor: '#2563EB',
     borderBottomRightRadius: 4,
   },
   bubbleThem: {
-    alignSelf: 'flex-start',
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#E5E7EB',

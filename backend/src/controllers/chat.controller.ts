@@ -76,6 +76,8 @@ export const listConversations: RequestHandler = async (req, res, next) => {
         listing_id,
         buyer_user_id,
         seller_user_id,
+        buyer_last_read_at,
+        seller_last_read_at,
         created_at,
         updated_at,
         listings ( id, title ),
@@ -86,13 +88,21 @@ export const listConversations: RequestHandler = async (req, res, next) => {
 
     if (error) throw error;
 
-    // Attach only the latest message for each conversation
+    // Attach only the latest message and compute has_unread for each conversation
     const result = (data ?? []).map((conv: any) => {
       const msgs: any[] = conv.messages ?? [];
       const lastMessage = msgs.sort(
         (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )[0] ?? null;
-      return { ...conv, messages: undefined, last_message: lastMessage };
+
+      const isBuyer = conv.buyer_user_id === userId;
+      const lastReadAt = isBuyer ? conv.buyer_last_read_at : conv.seller_last_read_at;
+      const has_unread =
+        lastMessage !== null &&
+        lastMessage.sender_user_id !== userId &&
+        (lastReadAt === null || new Date(lastMessage.created_at) > new Date(lastReadAt));
+
+      return { ...conv, messages: undefined, last_message: lastMessage, has_unread };
     });
 
     res.status(200).json({ data: result });
@@ -131,6 +141,13 @@ export const getMessages: RequestHandler = async (req, res, next) => {
       .range(offset, offset + limit - 1);
 
     if (error) throw error;
+
+    // Mark conversation as read for this user
+    const readField = conv.buyer_user_id === userId ? "buyer_last_read_at" : "seller_last_read_at";
+    await supabaseAdmin
+      .from("conversations")
+      .update({ [readField]: new Date().toISOString() })
+      .eq("id", conversationId);
 
     res.status(200).json({ data: messages ?? [], meta: { limit, offset, count: messages?.length ?? 0 } });
   } catch (error) {

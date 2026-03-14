@@ -26,7 +26,6 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
     }
   }, []);
 
-  // Reload every time the screen comes into focus
   useFocusEffect(
     useCallback(() => {
       fetchConversations();
@@ -48,8 +47,7 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
   const formatTime = (iso: string) => {
     const d = new Date(iso);
     const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     if (diffDays === 1) return 'Yesterday';
     return d.toLocaleDateString();
@@ -72,23 +70,29 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
             const isBuyer = item.buyer_user_id === user?.id;
             const role = isBuyer ? 'Buyer' : 'Seller';
             const lastMsg = item.last_message;
+            const hasUnread = item.has_unread;
             return (
               <Pressable
-                style={styles.card}
+                style={[styles.card, hasUnread && styles.cardUnread]}
                 onPress={() => navigation.navigate('Chat', { conversation: item })}
               >
                 <View style={styles.cardTop}>
-                  <Text style={styles.listingTitle} numberOfLines={1}>
+                  <Text style={[styles.listingTitle, hasUnread && styles.textUnread]} numberOfLines={1}>
                     {item.listings?.title ?? 'Listing'}
                   </Text>
-                  {lastMsg && (
-                    <Text style={styles.time}>{formatTime(lastMsg.created_at)}</Text>
-                  )}
+                  <View style={styles.cardTopRight}>
+                    {lastMsg && (
+                      <Text style={[styles.time, hasUnread && styles.timeUnread]}>
+                        {formatTime(lastMsg.created_at)}
+                      </Text>
+                    )}
+                    {hasUnread && <View style={styles.unreadDot} />}
+                  </View>
                 </View>
                 <View style={styles.cardBottom}>
                   <Text style={styles.roleBadge}>{role}</Text>
                   {lastMsg ? (
-                    <Text style={styles.preview} numberOfLines={1}>
+                    <Text style={[styles.preview, hasUnread && styles.previewUnread]} numberOfLines={1}>
                       {lastMsg.sender_user_id === user?.id ? 'You: ' : ''}{lastMsg.body}
                     </Text>
                   ) : (
@@ -126,9 +130,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
+  cardUnread: {
+    borderColor: '#BFDBFE',
+    backgroundColor: '#F0F7FF',
+  },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  cardTopRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   listingTitle: { fontSize: 16, fontWeight: '700', flex: 1, marginRight: 8 },
+  textUnread: { color: '#1D4ED8' },
   time: { fontSize: 12, color: '#9CA3AF' },
+  timeUnread: { color: '#2563EB', fontWeight: '600' },
+  unreadDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#2563EB',
+  },
   cardBottom: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   roleBadge: {
     fontSize: 11,
@@ -140,6 +157,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   preview: { fontSize: 14, color: '#6B7280', flex: 1 },
+  previewUnread: { color: '#111827', fontWeight: '600' },
   noMessages: { fontSize: 14, color: '#9CA3AF', fontStyle: 'italic' },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 40, fontSize: 15, lineHeight: 24, paddingHorizontal: 32 },
 });
