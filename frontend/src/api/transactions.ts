@@ -38,11 +38,13 @@ export async function respondTransaction(transactionId: string, action: 'approve
 }
 
 // List current user's transactions (role: 'seller'|'buyer'|'all', optional status)
-export async function listMyTransactions(params?: { role?: string; status?: string }) {
+export async function listMyTransactions(params?: { role?: string; status?: string; limit?: number; offset?: number }) {
   const url = new URL(`${API_BASE_URL}/transactions/mine`);
   if (params) {
     if (params.role) url.searchParams.set('role', params.role);
     if (params.status) url.searchParams.set('status', params.status);
+    if (params.limit !== undefined) url.searchParams.set('limit', String(params.limit));
+    if (params.offset !== undefined) url.searchParams.set('offset', String(params.offset));
   }
   const res = await fetch(url.toString(), { headers: authHeaders() });
   const json = await res.json().catch(() => ({}));
