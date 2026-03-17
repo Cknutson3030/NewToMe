@@ -49,6 +49,7 @@ export default function OfferScreen({ route, navigation }: { route: any; navigat
 
 const styles = StyleSheet.create({
   container: { padding: 16 },
+  scrollContent: { padding: 16 },
   header: { fontSize: 22, fontWeight: '700', marginBottom: 12 },
   image: { width: '100%', height: 180, borderRadius: 8, marginBottom: 12, backgroundColor: '#E5E7EB' },
   title: { fontSize: 18, fontWeight: '700', marginBottom: 8 },

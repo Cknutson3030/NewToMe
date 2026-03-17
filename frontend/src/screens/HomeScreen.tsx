@@ -198,7 +198,6 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           keyExtractor={(item, index) =>
             String(item?.id ?? item?._id ?? `${item?.title ?? 'listing'}-${index}`)
           }
-          contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
           }
@@ -287,8 +286,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           }}
           ListEmptyComponent={<Text style={styles.empty}>No listings yet.</Text>}
         />
-        </KeyboardAvoidingView>
         )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
