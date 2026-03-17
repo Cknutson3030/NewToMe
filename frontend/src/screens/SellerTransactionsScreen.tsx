@@ -78,8 +78,8 @@ export default function SellerTransactionsScreen({ navigation }: { navigation: a
           onEndReached={() => { if (!loadingMore && hasMore) { fetch({ append: true }); } }}
           renderItem={({ item }) => (
             <View style={styles.card}>
-              <Text style={styles.title}>Listing: {item.listing_id}</Text>
-              <Text>Buyer: {item.buyer_id}</Text>
+              <Text style={styles.title}>{item.listing_title ?? `Listing: ${item.listing_id}`}</Text>
+              <Text>Buyer: {item.buyer_email ?? item.buyer_id}</Text>
               <Text>Status: {item.status}</Text>
               <Text style={styles.time}>{new Date(item.created_at).toLocaleString()}</Text>
               {item.status === 'pending' && (
