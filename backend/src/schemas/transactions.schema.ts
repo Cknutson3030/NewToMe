@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const requestTransactionSchema = z.object({
   listingId: z.string().uuid(),
+  offeredPrice: z.number().nonnegative(),
 });
 
 export const respondTransactionSchema = z.object({

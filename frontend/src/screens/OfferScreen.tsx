@@ -1,0 +1,54 @@
+import React, { useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Image } from 'react-native';
+import { requestTransaction } from '../api/transactions';
+
+export default function OfferScreen({ route, navigation }: { route: any; navigation: any }) {
+  const { listingId, listingTitle, listingImage } = route.params || {};
+  const [price, setPrice] = useState('');
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    if (!price) return Alert.alert('Please enter an offer price');
+    const parsed = Number(price);
+    if (isNaN(parsed) || parsed < 0) return Alert.alert('Enter a valid non-negative number');
+    setLoading(true);
+    try {
+      await requestTransaction(listingId, parsed, notes || undefined);
+      Alert.alert('Success', 'Offer submitted to seller');
+      navigation.goBack();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to submit offer');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F8FA' }}>
+      <View style={styles.container}>
+        <Text style={styles.header}>Offer</Text>
+        {listingImage ? <Image source={{ uri: listingImage }} style={styles.image} /> : null}
+        <Text style={styles.title}>{listingTitle ?? 'Listing'}</Text>
+        <Text style={styles.label}>Your Offer (USD)</Text>
+        <TextInput keyboardType="numeric" value={price} onChangeText={setPrice} style={styles.input} placeholder="Enter offer price" />
+        <Text style={styles.label}>Notes (optional)</Text>
+        <TextInput value={notes} onChangeText={setNotes} style={[styles.input, { height: 90 }]} placeholder="Message to seller" multiline />
+        <Pressable style={styles.submit} onPress={submit} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Send Offer</Text>}
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { padding: 16 },
+  header: { fontSize: 22, fontWeight: '700', marginBottom: 12 },
+  image: { width: '100%', height: 180, borderRadius: 8, marginBottom: 12, backgroundColor: '#E5E7EB' },
+  title: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  label: { fontWeight: '600', marginTop: 8, marginBottom: 6 },
+  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', padding: 10, borderRadius: 8 },
+  submit: { backgroundColor: '#2563EB', padding: 14, alignItems: 'center', borderRadius: 8, marginTop: 16 },
+});
