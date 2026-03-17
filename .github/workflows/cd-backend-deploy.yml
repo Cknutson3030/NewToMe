@@ -25,12 +25,21 @@ jobs:
         run: npm install
         working-directory: backend
 
+
       # 4️⃣ Build TypeScript
       - name: Build
         run: npm run build
         working-directory: backend
 
-      # 5️⃣ Deploy to Azure Web App
+      # 5️⃣ Apply Supabase migrations
+      - name: Apply Supabase migrations
+        uses: supabase/setup-cli@v1
+      - run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+
+      # 6️⃣ Deploy to Azure Web App
       - name: Deploy to Azure
         uses: azure/webapps-deploy@v2
         with:

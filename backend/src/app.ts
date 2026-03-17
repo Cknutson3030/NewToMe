@@ -6,6 +6,7 @@ import morgan from "morgan";
 import { healthRouter } from "./routes/health.routes";
 import { authRouter } from "./routes/auth.routes";
 import { listingsRouter } from "./routes/listings.routes";
+import { transactionsRouter } from "./routes/transactions.routes";
 import { chatRouter } from "./routes/chat.routes";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
@@ -16,9 +17,11 @@ app.use(cors({ origin: "*" })); // temporary for debug; lock down in prod
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("dev"));
 
+
 app.use("/health", healthRouter);
 app.use("/auth", authRouter);
 app.use("/listings", listingsRouter);
+app.use("/transactions", transactionsRouter);
 app.use("/conversations", chatRouter);
 
 app.use(notFoundHandler);
