@@ -27,6 +27,7 @@ coverage/
 Thumbs.db
 .vscode/*
 !.vscode/extensions.json
+.claude/settings.local.json
 
 # ========================
 # Logs

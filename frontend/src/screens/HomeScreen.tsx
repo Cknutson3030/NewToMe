@@ -1,14 +1,27 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator, Image, RefreshControl, TextInput } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator, Image, RefreshControl, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Alert } from 'react-native';
 import { getListings } from '../api/listings';
+import { getOrCreateConversation } from '../api/chat';
 import { useAuth } from '../contexts/AuthContext';
 
 const HEALTH_URL = 'http://172.16.1.252:3000/health';
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { signOut, user } = useAuth();
+  const [messagingListingId, setMessagingListingId] = useState<string | null>(null);
+
+  const handleMessageSeller = useCallback(async (listingId: string) => {
+    setMessagingListingId(listingId);
+    try {
+      const conversation = await getOrCreateConversation(listingId);
+      navigation.navigate('Chat', { conversation });
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not open conversation');
+    } finally {
+      setMessagingListingId(null);
+    }
+  }, [navigation]);
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -124,6 +137,9 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       <View style={styles.header}>
         <Text style={styles.title}>Listings</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', flex: 1, marginLeft: 8 }}>
+          <Pressable style={styles.createButton} onPress={() => navigation.navigate('Conversations')}>
+            <Text style={styles.createButtonText}>Messages</Text>
+          </Pressable>
           <Pressable style={styles.createButton} onPress={() => navigation.navigate('MyListings')}>
             <Text style={styles.createButtonText}>My Listings</Text>
           </Pressable>
@@ -231,12 +247,23 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                     <Text style={{ fontWeight: 'bold' }}>Condition:</Text> {item.item_condition}
                   </Text>
                 </View>
-                {isOwner && (
+                {isOwner ? (
                   <Pressable
                     style={styles.editButton}
                     onPress={() => navigation.navigate('EditListing', { listing: item })}
                   >
                     <Text style={styles.editButtonText}>Edit</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    style={[styles.editButton, { backgroundColor: '#10B981' }]}
+                    onPress={() => handleMessageSeller(item.id)}
+                    disabled={messagingListingId === item.id}
+                  >
+                    {messagingListingId === item.id
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={styles.editButtonText}>Message Seller</Text>
+                    }
                   </Pressable>
                 )}
               </View>
