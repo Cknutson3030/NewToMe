@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getListings } from '../api/listings';
 import Button from '../components/ui/Button';
@@ -165,12 +165,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           <TextInput style={styles.smallInput} placeholder="Limit" keyboardType="numeric" value={limit} onChangeText={setLimit} />
         </View>
         <View style={[styles.filterRow, { marginTop: 8, alignItems: 'center' }]}> 
-          <Pressable style={styles.sortButton} onPress={() => setSortBy(sortBy === 'created_at' ? 'price' : sortBy === 'price' ? 'title' : 'created_at')}>
-            <Text style={styles.sortButtonText}>Sort: {sortBy}</Text>
-          </Pressable>
-          <Pressable style={styles.sortButton} onPress={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}>
-            <Text style={styles.sortButtonText}>Order: {sortOrder}</Text>
-          </Pressable>
+          <Button variant="ghost" style={styles.sortButton} onPress={() => setSortBy(sortBy === 'created_at' ? 'price' : sortBy === 'price' ? 'title' : 'created_at')}>Sort: {sortBy}</Button>
+          <Button variant="ghost" style={styles.sortButton} onPress={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}>Order: {sortOrder}</Button>
           <Button onPress={() => fetchListings({ q, category, item_condition: itemCondition, location_city: locationCity, min_price: minPrice, max_price: maxPrice, sort_by: sortBy, sort_order: sortOrder }, false)}>Apply</Button>
         </View>
       </View>

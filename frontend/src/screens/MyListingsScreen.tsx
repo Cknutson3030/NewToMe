@@ -4,7 +4,6 @@ import {
   Text,
   FlatList,
   StyleSheet,
-  Pressable,
   ActivityIndicator,
   Image,
   RefreshControl,
@@ -148,12 +147,7 @@ export default function MyListingsScreen({ navigation }: { navigation: any }) {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>You haven't listed anything yet.</Text>
-              <Pressable
-                style={styles.createButton}
-                onPress={() => navigation.navigate('CreateListing')}
-              >
-                <Text style={styles.createButtonText}>Create Your First Listing</Text>
-              </Pressable>
+              <Button onPress={() => navigation.navigate('CreateListing')} style={styles.createButton}>Create Your First Listing</Button>
             </View>
           }
         />

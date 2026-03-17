@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Pressable, Alert, RefreshControl, Image } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, Image } from 'react-native';
 import { listMyTransactions } from '../api/transactions';
 import { useTheme } from '../theme/ThemeProvider';
 import { Card, Button, Skeleton } from '../components/ui';
@@ -49,18 +49,14 @@ export default function PurchasesScreen({ navigation }: { navigation: any }) {
       <Text style={[styles.header, theme.typography.h2]}>My Purchases</Text>
       <View style={styles.filterRow}>
         {(['all','pending','approved','rejected'] as const).map(s => (
-          <Pressable
+          <Button
             key={s}
-            accessibilityRole="button"
-            accessibilityState={{ selected: statusFilter === s }}
-            style={[
-              styles.filterButton,
-              statusFilter === s ? { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary } : { backgroundColor: theme.colors.surface }
-            ]}
+            variant={statusFilter === s ? 'primary' : 'ghost'}
+            style={styles.filterButton}
             onPress={() => { setStatusFilter(s as any); setRefreshing(true); fetch({ append: false }); }}
           >
-            <Text style={[styles.filterText, statusFilter === s ? { color: '#fff' } : {}]}>{s.charAt(0).toUpperCase()+s.slice(1)}</Text>
-          </Pressable>
+            {s.charAt(0).toUpperCase()+s.slice(1)}
+          </Button>
         ))}
       </View>
 

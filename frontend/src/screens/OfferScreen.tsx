@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Image, KeyboardAvoidingView, ScrollView, Keyboard, Platform, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Alert, ActivityIndicator, Image, KeyboardAvoidingView, ScrollView, Keyboard, Platform, TouchableWithoutFeedback } from 'react-native';
 import { requestTransaction } from '../api/transactions';
 import { useTheme } from '../theme/ThemeProvider';
 import Button from '../components/ui/Button';

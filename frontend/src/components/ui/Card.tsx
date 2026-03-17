@@ -6,7 +6,7 @@ export default function Card({ children, style, ...rest }: ViewProps) {
   const { theme } = useTheme();
   const styles = makeStyles(theme);
   return (
-    <View accessibilityRole="article" style={[styles.card, style]} {...rest}>
+    <View style={[styles.card, style]} {...rest}>
       {children}
     </View>
   );

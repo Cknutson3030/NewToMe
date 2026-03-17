@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Pressable, Alert, RefreshControl, Image } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, Image } from 'react-native';
 import { listMyTransactions, respondTransaction } from '../api/transactions';
 import { useTheme } from '../theme/ThemeProvider';
 import { Card, Button, Skeleton } from '../components/ui';
