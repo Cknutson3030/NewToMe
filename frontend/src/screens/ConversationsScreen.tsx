@@ -7,12 +7,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { listConversations } from '../api/chat';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../theme/ThemeProvider';
+import Card from '../components/ui/Card';
 
 export default function ConversationsScreen({ navigation }: { navigation: any }) {
   const { user } = useAuth();
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { theme } = useTheme();
 
   const fetchConversations = useCallback(async () => {
     setLoading(true);
@@ -54,56 +57,55 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Messages</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+        <Text style={[styles.title, theme.typography.h1]}>Messages</Text>
       </View>
 
       {loading && !refreshing ? (
-        <ActivityIndicator size="large" color="#2563EB" style={styles.loader} />
+        <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
       ) : (
         <FlatList
           data={conversations}
           keyExtractor={(item) => item.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />}
           renderItem={({ item }) => {
             const isBuyer = item.buyer_user_id === user?.id;
             const role = isBuyer ? 'Buyer' : 'Seller';
             const lastMsg = item.last_message;
             const hasUnread = item.has_unread;
             return (
-              <Pressable
-                style={[styles.card, hasUnread && styles.cardUnread]}
-                onPress={() => navigation.navigate('Chat', { conversation: item })}
-              >
-                <View style={styles.cardTop}>
-                  <Text style={[styles.listingTitle, hasUnread && styles.textUnread]} numberOfLines={1}>
-                    {item.listings?.title ?? 'Listing'}
-                  </Text>
-                  <View style={styles.cardTopRight}>
-                    {lastMsg && (
-                      <Text style={[styles.time, hasUnread && styles.timeUnread]}>
-                        {formatTime(lastMsg.created_at)}
-                      </Text>
-                    )}
-                    {hasUnread && <View style={styles.unreadDot} />}
-                  </View>
-                </View>
-                <View style={styles.cardBottom}>
-                  <Text style={styles.roleBadge}>{role}</Text>
-                  {lastMsg ? (
-                    <Text style={[styles.preview, hasUnread && styles.previewUnread]} numberOfLines={1}>
-                      {lastMsg.sender_user_id === user?.id ? 'You: ' : ''}{lastMsg.body}
+              <Pressable onPress={() => navigation.navigate('Chat', { conversation: item })}>
+                <Card style={[styles.card, hasUnread ? { backgroundColor: '#F0F7FF', borderColor: '#BFDBFE' } : {}]}>
+                  <View style={styles.cardTop}>
+                    <Text style={[styles.listingTitle, hasUnread && styles.textUnread]} numberOfLines={1}>
+                      {item.listings?.title ?? 'Listing'}
                     </Text>
-                  ) : (
-                    <Text style={styles.noMessages}>No messages yet</Text>
-                  )}
-                </View>
+                    <View style={styles.cardTopRight}>
+                      {lastMsg && (
+                        <Text style={[styles.time, hasUnread && styles.timeUnread]}>
+                          {formatTime(lastMsg.created_at)}
+                        </Text>
+                      )}
+                      {hasUnread && <View style={styles.unreadDot} />}
+                    </View>
+                  </View>
+                  <View style={styles.cardBottom}>
+                    <Text style={styles.roleBadge}>{role}</Text>
+                    {lastMsg ? (
+                      <Text style={[styles.preview, hasUnread && styles.previewUnread]} numberOfLines={1}>
+                        {lastMsg.sender_user_id === user?.id ? 'You: ' : ''}{lastMsg.body}
+                      </Text>
+                    ) : (
+                      <Text style={styles.noMessages}>No messages yet</Text>
+                    )}
+                  </View>
+                </Card>
               </Pressable>
             );
           }}
           ListEmptyComponent={
-            <Text style={styles.empty}>No conversations yet.{'\n'}Tap "Message Seller" on any listing to start one.</Text>
+            <Text style={[styles.empty, { color: theme.colors.muted }]}>No conversations yet.{'\n'}Tap "Message Seller" on any listing to start one.</Text>
           }
         />
       )}

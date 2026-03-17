@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Pressable, Alert, RefreshControl, Image } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, Image } from 'react-native';
 import { listMyTransactions, respondTransaction } from '../api/transactions';
+import { useTheme } from '../theme/ThemeProvider';
+import { Card, Button, Skeleton } from '../components/ui';
 
 export default function SellerTransactionsScreen({ navigation }: { navigation: any }) {
+  const { theme } = useTheme();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -52,55 +55,50 @@ export default function SellerTransactionsScreen({ navigation }: { navigation: a
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>Seller Transactions</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <Text style={[styles.header, theme.typography.h2]}>Seller Transactions</Text>
       <View style={styles.filterRow}>
         {(['pending','approved','rejected','all'] as const).map(s => (
-          <Pressable
-            key={s}
-            style={[styles.filterButton, statusFilter === s ? styles.filterActive : null]}
-            onPress={() => setStatusFilter(s as any)}
-          >
-            <Text style={[styles.filterText, statusFilter === s ? { color: '#fff' } : {}]}>{s.charAt(0).toUpperCase()+s.slice(1)}</Text>
-          </Pressable>
+          <Button key={s} variant={statusFilter === s ? 'primary' : 'ghost'} style={{ marginRight: 8 }} onPress={() => { setStatusFilter(s as any); setRefreshing(true); fetch({ append: false }); }}>
+            {s.charAt(0).toUpperCase()+s.slice(1)}
+          </Button>
         ))}
       </View>
 
       {loading && !refreshing ? (
-        <ActivityIndicator style={{marginTop:24}} />
+        <View style={{ padding: theme.spacing.md }}>
+          <Skeleton style={{ height: 18, width: '50%' }} />
+          <Skeleton style={{ height: 140, borderRadius: 10 }} />
+        </View>
       ) : (
         <FlatList
           data={transactions}
           keyExtractor={(t) => String(t.id)}
-          contentContainerStyle={{ padding: 16 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch({ append: false }); }} />}
+          contentContainerStyle={{ padding: theme.spacing.md }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch({ append: false }); }} colors={[theme.colors.primary]} />}
           onEndReachedThreshold={0.5}
           onEndReached={() => { if (!loadingMore && hasMore) { fetch({ append: true }); } }}
           renderItem={({ item }) => (
-            <View style={styles.card}>
+            <Card style={{ marginTop: theme.spacing.sm }}>
               {item.listing_image_url ? (
                 <Image source={{ uri: item.listing_image_url }} style={{ width: '100%', height: 140, borderRadius: 8, marginBottom: 8 }} />
               ) : null}
-              <Text style={styles.title}>{item.listing_title ?? `Listing: ${item.listing_id}`}</Text>
-              <Text>Original: {item.listing_price != null ? `$${Number(item.listing_price).toFixed(2)}` : '—'}</Text>
-              <Text>Offer: {item.offered_price != null ? `$${Number(item.offered_price).toFixed(2)}` : '—'}</Text>
-              <Text>Buyer: {item.buyer_email ?? item.buyer_id}</Text>
-              <Text>Status: {item.status}</Text>
-              <Text style={styles.time}>{new Date(item.created_at).toLocaleString()}</Text>
+              <Text style={[styles.title, theme.typography.body]}>{item.listing_title ?? `Listing: ${item.listing_id}`}</Text>
+              <Text style={theme.typography.small}>Original: {item.listing_price != null ? `$${Number(item.listing_price).toFixed(2)}` : '—'}</Text>
+              <Text style={theme.typography.small}>Offer: {item.offered_price != null ? `$${Number(item.offered_price).toFixed(2)}` : '—'}</Text>
+              <Text style={theme.typography.small}>Buyer: {item.buyer_email ?? item.buyer_id}</Text>
+              <Text style={theme.typography.small}>Status: {item.status}</Text>
+              <Text style={[styles.time, theme.typography.small]}>{new Date(item.created_at).toLocaleString()}</Text>
               {item.status === 'pending' && (
-                <View style={{ flexDirection: 'row', marginTop: 12 }}>
-                  <Pressable style={styles.approveButton} onPress={() => handleAction(item.id, 'approved')}>
-                    <Text style={{ color: '#fff', fontWeight: '700' }}>Approve</Text>
-                  </Pressable>
-                  <Pressable style={styles.rejectButton} onPress={() => handleAction(item.id, 'rejected')}>
-                    <Text style={{ color: '#fff', fontWeight: '700' }}>Reject</Text>
-                  </Pressable>
+                <View style={{ flexDirection: 'row', marginTop: theme.spacing.sm }}>
+                  <Button style={{ marginRight: 8 }} onPress={() => handleAction(item.id, 'approved')}>Approve</Button>
+                  <Button variant="ghost" onPress={() => handleAction(item.id, 'rejected')}>Reject</Button>
                 </View>
               )}
-            </View>
+            </Card>
           )}
-          ListFooterComponent={loadingMore ? <ActivityIndicator style={{ margin: 12 }} /> : null}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 24 }}>No transactions found.</Text>}
+          ListFooterComponent={loadingMore ? <ActivityIndicator style={{ margin: theme.spacing.md }} color={theme.colors.primary} /> : null}
+          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 24, color: theme.colors.muted }}>No transactions found.</Text>}
         />
       )}
     </SafeAreaView>

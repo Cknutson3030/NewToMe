@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Image, KeyboardAvoidingView, ScrollView, Keyboard, Platform, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Alert, ActivityIndicator, Image, KeyboardAvoidingView, ScrollView, Keyboard, Platform, TouchableWithoutFeedback } from 'react-native';
 import { requestTransaction } from '../api/transactions';
+import { useTheme } from '../theme/ThemeProvider';
+import Button from '../components/ui/Button';
 
 export default function OfferScreen({ route, navigation }: { route: any; navigation: any }) {
   const { listingId, listingTitle, listingImage } = route.params || {};
@@ -24,22 +26,21 @@ export default function OfferScreen({ route, navigation }: { route: any; navigat
       setLoading(false);
     }
   };
+  const { theme } = useTheme();
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F8FA' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}>
         <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
           <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.header}>Offer</Text>
+            <Text style={[styles.header, theme.typography.h2]}>Offer</Text>
             {listingImage ? <Image source={{ uri: listingImage }} style={styles.image} /> : null}
             <Text style={styles.title}>{listingTitle ?? 'Listing'}</Text>
             <Text style={styles.label}>Your Offer (USD)</Text>
             <TextInput keyboardType="numeric" value={price} onChangeText={setPrice} style={styles.input} placeholder="Enter offer price" returnKeyType="done" />
             <Text style={styles.label}>Notes (optional)</Text>
             <TextInput value={notes} onChangeText={setNotes} style={[styles.input, { height: 90 }]} placeholder="Message to seller" multiline />
-            <Pressable style={styles.submit} onPress={submit} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Send Offer</Text>}
-            </Pressable>
+            <Button onPress={submit} style={{ marginTop: 16 }}>{loading ? 'Sending...' : 'Send Offer'}</Button>
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>

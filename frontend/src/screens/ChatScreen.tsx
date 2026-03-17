@@ -6,6 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getMessages, sendMessage } from '../api/chat';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../theme/ThemeProvider';
+import Button from '../components/ui/Button';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -105,15 +107,17 @@ export default function ChatScreen({ route, navigation }: { route: any; navigati
     );
   };
 
+  const { theme } = useTheme();
+
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['bottom']}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={90}
       >
         {loading ? (
-          <ActivityIndicator size="large" color="#2563EB" style={styles.loader} />
+          <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
         ) : (
           <FlatList
             ref={flatListRef}
@@ -128,7 +132,7 @@ export default function ChatScreen({ route, navigation }: { route: any; navigati
           />
         )}
 
-        <View style={styles.inputRow}>
+        <View style={[styles.inputRow, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }]}>
           <TextInput
             style={styles.input}
             placeholder="Type a message..."
@@ -138,17 +142,9 @@ export default function ChatScreen({ route, navigation }: { route: any; navigati
             maxLength={2000}
             returnKeyType="default"
           />
-          <Pressable
-            style={[styles.sendButton, (!draft.trim() || sending) && styles.sendButtonDisabled]}
-            onPress={handleSend}
-            disabled={!draft.trim() || sending}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.sendButtonText}>Send</Text>
-            )}
-          </Pressable>
+          <Button onPress={handleSend} style={{ marginLeft: 8 }} accessibilityLabel="Send message">
+            {sending ? 'Sending...' : 'Send'}
+          </Button>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -23,6 +23,8 @@ import {
     uploadListingImages,
     deleteListingImage,
 } from '../api/listings';
+import { useTheme } from '../theme/ThemeProvider';
+import UI_Button from '../components/ui/Button';
 
 // Convert image to JPEG (handles HEIC from iPhone)
 const convertToJpeg = async (uri: string): Promise<{ uri: string; mimeType: string }> => {
@@ -66,6 +68,7 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
     );
     const [newImages, setNewImages] = useState<NewImage[]>([]);
     const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
+    const { theme } = useTheme();
 
     const totalImages = existingImages.length + newImages.length;
     const maxImages = 5;
@@ -312,10 +315,10 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
             {totalImages < maxImages && (
                 <View style={styles.imageButtons}>
                     <View style={{ flex: 1, marginRight: 8 }}>
-                        <Button title="Pick Images" onPress={pickImages} />
+                        <UI_Button onPress={pickImages}>Pick Images</UI_Button>
                     </View>
                     <View style={{ flex: 1 }}>
-                        <Button title="Take Photo" onPress={takePhoto} />
+                        <UI_Button variant="ghost" onPress={takePhoto}>Take Photo</UI_Button>
                     </View>
                 </View>
             )}
@@ -369,31 +372,19 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
             <Text style={styles.label}>Status</Text>
             <View style={styles.statusRow}>
                 {['active', 'inactive', 'sold'].map((s) => (
-                    <Button
-                        key={s}
-                        title={s.charAt(0).toUpperCase() + s.slice(1)}
-                        onPress={() => setStatus(s)}
-                        color={status === s ? '#2563EB' : '#9CA3AF'}
-                    />
+                    <UI_Button key={s} variant={status === s ? 'primary' : 'ghost'} onPress={() => setStatus(s)}>
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </UI_Button>
                 ))}
             </View>
 
             <View style={styles.buttonRow}>
-                <Button title="Cancel" onPress={() => navigation.goBack()} color="#6B7280" />
-                <Button
-                    title={loading ? 'Saving...' : 'Save Changes'}
-                    onPress={updateListing}
-                    disabled={loading}
-                />
+                <UI_Button variant="ghost" onPress={() => navigation.goBack()}>Cancel</UI_Button>
+                <UI_Button onPress={updateListing}>{loading ? 'Saving...' : 'Save Changes'}</UI_Button>
             </View>
 
             <View style={styles.deleteSection}>
-                <Button
-                    title="Delete Listing"
-                    onPress={deleteListing}
-                    color="#DC2626"
-                    disabled={loading}
-                />
+                <UI_Button variant="ghost" onPress={deleteListing}>Delete Listing</UI_Button>
             </View>
                 </ScrollView>
             </TouchableWithoutFeedback>
