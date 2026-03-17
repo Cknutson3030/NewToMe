@@ -6,7 +6,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import Button from '../components/ui/Button';
 
 export default function OfferScreen({ route, navigation }: { route: any; navigation: any }) {
-  const { listingId, listingTitle, listingImage } = route.params || {};
+  const { listingId, listingTitle, listingImage, listingPrice, listingLocation, listingCondition } = route.params || {};
   const [price, setPrice] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,6 +36,11 @@ export default function OfferScreen({ route, navigation }: { route: any; navigat
             <Text style={[styles.header, theme.typography.h2]}>Offer</Text>
             {listingImage ? <Image source={{ uri: listingImage }} style={styles.image} /> : null}
             <Text style={styles.title}>{listingTitle ?? 'Listing'}</Text>
+            {listingPrice != null && (
+              <Text style={[styles.label, { marginTop: 6 }]}>Original Price: ${Number(listingPrice).toFixed(2)}</Text>
+            )}
+            {listingCondition ? <Text style={[styles.label, { marginTop: 4 }]}>Condition: {listingCondition}</Text> : null}
+            {listingLocation ? <Text style={[styles.label, { marginTop: 2 }]}>Location: {listingLocation}</Text> : null}
             <Text style={styles.label}>Your Offer (USD)</Text>
             <TextInput keyboardType="numeric" value={price} onChangeText={setPrice} style={styles.input} placeholder="Enter offer price" returnKeyType="done" />
             <Text style={styles.label}>Notes (optional)</Text>

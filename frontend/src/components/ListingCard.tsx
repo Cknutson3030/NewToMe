@@ -7,7 +7,7 @@ import { useTheme } from '../theme/ThemeProvider';
 type Props = {
   item: any;
   onPressMessage?: (id: string) => void;
-  onPressRequest?: (id: string) => void;
+  onPressRequest?: (item: any) => void;
   onPressEdit?: (item: any) => void;
   isOwner?: boolean;
   loadingAction?: boolean;
@@ -16,7 +16,7 @@ type Props = {
   overlayStyle?: 'translucent' | 'solid' | 'blur';
 };
 
-export default function ListingCard({ item, onPressMessage, onPressRequest, onPressEdit, isOwner, loadingAction, requested }: Props) {
+function ListingCard({ item, onPressMessage, onPressRequest, onPressEdit, isOwner, loadingAction, requested }: Props) {
   const { theme } = useTheme();
   const windowWidth = Dimensions.get('window').width;
   const compact = windowWidth < 360;
@@ -48,38 +48,20 @@ export default function ListingCard({ item, onPressMessage, onPressRequest, onPr
         {firstImage?.image_url ? (
           <Image source={{ uri: firstImage.image_url }} style={styles.image} />
         ) : null}
-
-        {BlurView ? (
-          <BlurView style={[styles.actionsOverlay, { left: theme.spacing.md, right: theme.spacing.md, bottom: -20 }]} blurType={"light"} blurAmount={8} pointerEvents="box-none">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsRow}>
-              {isOwner ? (
-                <Button variant="ghost" onPress={() => onPressEdit?.(item)} style={[styles.actionBtn, compact ? styles.actionBtnCompact : null]}>Edit</Button>
-              ) : (
-                <>
-                  <Button style={[styles.actionBtn, compact ? styles.actionBtnCompact : null, { marginRight: 8 }]} onPress={() => onPressMessage?.(item.id)}>Message</Button>
-                  <Button style={[styles.actionBtn, compact ? styles.actionBtnCompact : null]} onPress={() => onPressRequest?.(item.id)}>{requested ? 'Requested' : 'Request'}</Button>
-                </>
-              )}
-            </ScrollView>
-          </BlurView>
-        ) : (
-          <View style={[styles.actionsOverlay, { left: theme.spacing.md, right: theme.spacing.md, bottom: -20, backgroundColor: overlayColor }]} pointerEvents="box-none">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsRow}>
-              {isOwner ? (
-                <Button variant="ghost" onPress={() => onPressEdit?.(item)} style={[styles.actionBtn, compact ? styles.actionBtnCompact : null]}>Edit</Button>
-              ) : (
-                <>
-                  <Button style={[styles.actionBtn, compact ? styles.actionBtnCompact : null, { marginRight: 8 }]} onPress={() => onPressMessage?.(item.id)}>Message</Button>
-                  <Button style={[styles.actionBtn, compact ? styles.actionBtnCompact : null]} onPress={() => onPressRequest?.(item.id)}>{requested ? 'Requested' : 'Request'}</Button>
-                </>
-              )}
-            </ScrollView>
-          </View>
-        )}
       </View>
 
-      {/* spacer so overlay doesn't cover following content */}
-      <View style={{ height: 56 }} />
+      <View style={[styles.actionsContainer, { backgroundColor: overlayColor }] } pointerEvents="box-none">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsRow}>
+          {isOwner ? (
+            <Button variant="ghost" onPress={() => onPressEdit?.(item)} style={[styles.actionBtn, compact ? styles.actionBtnCompact : null]}>Edit</Button>
+          ) : (
+            <>
+              <Button style={[styles.actionBtn, compact ? styles.actionBtnCompact : null, { marginRight: 8 }]} onPress={() => onPressMessage?.(item.id)}>Message</Button>
+              <Button style={[styles.actionBtn, compact ? styles.actionBtnCompact : null]} onPress={() => onPressRequest?.(item)}>{requested ? 'Requested' : 'Request'}</Button>
+            </>
+          )}
+        </ScrollView>
+      </View>
 
       <Text style={[styles.title, theme.typography.body]}>{item.title}</Text>
       {item.description ? <Text style={[styles.desc, theme.typography.small]} numberOfLines={2}>{item.description}</Text> : null}
@@ -94,18 +76,18 @@ export default function ListingCard({ item, onPressMessage, onPressRequest, onPr
 const styles = StyleSheet.create({
   imageWrapper: { position: 'relative' },
   image: { width: '100%', height: 160, borderRadius: 8, marginBottom: 8, backgroundColor: '#E5E7EB' },
-  actionsOverlay: {
-    position: 'absolute',
-    // left/right set dynamically to align with card padding
+  actionsContainer: {
+    // container below image for actions
     alignSelf: 'stretch',
     paddingHorizontal: 6,
     borderRadius: 12,
-    // elevation / shadow for overlay
+    marginBottom: 8,
+    // elevation / shadow for container
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 3,
     overflow: 'hidden',
   },
   actionsRow: { alignItems: 'center', paddingVertical: 6 },
@@ -117,3 +99,11 @@ const styles = StyleSheet.create({
   detailText: { fontSize: 13, color: '#374151' },
 });
 //reusable UI components
+
+export default React.memo(ListingCard, (prev, next) => {
+  // avoid re-render unless essential props change
+  const sameId = prev.item?.id === next.item?.id;
+  const sameOwner = prev.isOwner === next.isOwner;
+  const sameRequested = prev.requested === next.requested;
+  return sameId && sameOwner && sameRequested;
+});
