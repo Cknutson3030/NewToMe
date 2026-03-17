@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Image, KeyboardAvoidingView, ScrollView, Keyboard, Platform, TouchableWithoutFeedback } from 'react-native';
 import { requestTransaction } from '../api/transactions';
 
 export default function OfferScreen({ route, navigation }: { route: any; navigation: any }) {
@@ -27,24 +27,29 @@ export default function OfferScreen({ route, navigation }: { route: any; navigat
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F8FA' }}>
-      <View style={styles.container}>
-        <Text style={styles.header}>Offer</Text>
-        {listingImage ? <Image source={{ uri: listingImage }} style={styles.image} /> : null}
-        <Text style={styles.title}>{listingTitle ?? 'Listing'}</Text>
-        <Text style={styles.label}>Your Offer (USD)</Text>
-        <TextInput keyboardType="numeric" value={price} onChangeText={setPrice} style={styles.input} placeholder="Enter offer price" />
-        <Text style={styles.label}>Notes (optional)</Text>
-        <TextInput value={notes} onChangeText={setNotes} style={[styles.input, { height: 90 }]} placeholder="Message to seller" multiline />
-        <Pressable style={styles.submit} onPress={submit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Send Offer</Text>}
-        </Pressable>
-      </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}>
+        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.header}>Offer</Text>
+            {listingImage ? <Image source={{ uri: listingImage }} style={styles.image} /> : null}
+            <Text style={styles.title}>{listingTitle ?? 'Listing'}</Text>
+            <Text style={styles.label}>Your Offer (USD)</Text>
+            <TextInput keyboardType="numeric" value={price} onChangeText={setPrice} style={styles.input} placeholder="Enter offer price" returnKeyType="done" />
+            <Text style={styles.label}>Notes (optional)</Text>
+            <TextInput value={notes} onChangeText={setNotes} style={[styles.input, { height: 90 }]} placeholder="Message to seller" multiline />
+            <Pressable style={styles.submit} onPress={submit} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Send Offer</Text>}
+            </Pressable>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: 16 },
+  scrollContent: { padding: 16 },
   header: { fontSize: 22, fontWeight: '700', marginBottom: 12 },
   image: { width: '100%', height: 180, borderRadius: 8, marginBottom: 12, backgroundColor: '#E5E7EB' },
   title: { fontSize: 18, fontWeight: '700', marginBottom: 8 },

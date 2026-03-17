@@ -10,6 +10,10 @@ import {
     Image,
     TouchableOpacity,
     ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    TouchableWithoutFeedback,
+    Keyboard,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -258,7 +262,9 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
     };
 
     return (
-        <ScrollView style={styles.container}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}>
+            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+                <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
             <Text style={styles.header}>Edit Listing</Text>
 
             {/* ── Images Section ── */}
@@ -389,7 +395,9 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
                     disabled={loading}
                 />
             </View>
-        </ScrollView>
+                </ScrollView>
+            </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
     );
 }
 

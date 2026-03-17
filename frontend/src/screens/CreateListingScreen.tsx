@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Button, Alert, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { createListing as apiCreateListing, uploadListingImages } from '../api/listings';
@@ -146,15 +146,17 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
     };
 
     return (
-        <View style={styles.container}>
-            <Text style={styles.header}>Create New Listing</Text>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}>
+          <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+              <Text style={styles.header}>Create New Listing</Text>
 
-            <TextInput
-                placeholder="Title *"
-                value={title}
-                onChangeText={setTitle}
-                style={styles.input}
-            />
+              <TextInput
+                  placeholder="Title *"
+                  value={title}
+                  onChangeText={setTitle}
+                  style={styles.input}
+              />
 
             <TextInput
                 placeholder="Description"
@@ -202,9 +204,11 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
                 <Text style={{ marginTop: 8, marginBottom: 8 }}>Selected {images.length} image(s)</Text>
             )}
 
-            <Button title="Create Listing" onPress={createListing} />
-        </View>
-    );
+                            <Button title="Create Listing" onPress={createListing} />
+                        </ScrollView>
+                    </TouchableWithoutFeedback>
+                </KeyboardAvoidingView>
+        );
 }
 
 const styles = StyleSheet.create({

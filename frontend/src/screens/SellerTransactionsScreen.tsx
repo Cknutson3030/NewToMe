@@ -82,6 +82,8 @@ export default function SellerTransactionsScreen({ navigation }: { navigation: a
                 <Image source={{ uri: item.listing_image_url }} style={{ width: '100%', height: 140, borderRadius: 8, marginBottom: 8 }} />
               ) : null}
               <Text style={styles.title}>{item.listing_title ?? `Listing: ${item.listing_id}`}</Text>
+              <Text>Original: {item.listing_price != null ? `$${Number(item.listing_price).toFixed(2)}` : '—'}</Text>
+              <Text>Offer: {item.offered_price != null ? `$${Number(item.offered_price).toFixed(2)}` : '—'}</Text>
               <Text>Buyer: {item.buyer_email ?? item.buyer_id}</Text>
               <Text>Status: {item.status}</Text>
               <Text style={styles.time}>{new Date(item.created_at).toLocaleString()}</Text>

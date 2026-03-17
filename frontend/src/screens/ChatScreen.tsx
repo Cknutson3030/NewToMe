@@ -119,7 +119,8 @@ export default function ChatScreen({ route, navigation }: { route: any; navigati
             ref={flatListRef}
             data={messages}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.messageList}
+            contentContainerStyle={[styles.messageList, { paddingBottom: 140 }]}
+            keyboardShouldPersistTaps="handled"
             renderItem={renderMessage}
             ListEmptyComponent={
               <Text style={styles.empty}>No messages yet. Say hello!</Text>
