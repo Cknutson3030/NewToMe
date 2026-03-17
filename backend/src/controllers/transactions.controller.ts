@@ -85,3 +85,28 @@ export const respondTransaction: RequestHandler = async (req, res, next) => {
     next(error);
   }
 };
+
+// Get transactions for current user (role: seller|buyer|all, optional status)
+export const getMyTransactions: RequestHandler = async (req, res, next) => {
+  try {
+    const { user } = req as AuthenticatedRequest;
+    const userId = user?.id;
+    if (!userId) throw new AppError(401, 'Unauthorized');
+
+    const { role = 'all', status } = req.query as any;
+
+    let query = supabaseAdmin.from('transactions').select('id, listing_id, buyer_id, seller_id, status, created_at');
+
+    if (role === 'seller') query = query.eq('seller_id', userId);
+    else if (role === 'buyer') query = query.eq('buyer_id', userId);
+    else query = query.or(`seller_id.eq.${userId},buyer_id.eq.${userId}`);
+
+    if (status) query = query.eq('status', String(status));
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+    res.status(200).json({ data });
+  } catch (error) {
+    next(error);
+  }
+};

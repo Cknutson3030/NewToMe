@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { setApiAccessToken, API_BASE_URL } from '../api/listings';
 import { setChatAccessToken } from '../api/chat';
+import { setTransactionsAccessToken } from '../api/transactions';
 
 interface AuthUser {
   id: string;
@@ -28,6 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setApiAccessToken(accessToken);
     setChatAccessToken(accessToken);
+    setTransactionsAccessToken(accessToken);
   }, [accessToken]);
 
   // ---- helpers ----

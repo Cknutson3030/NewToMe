@@ -3,9 +3,9 @@ import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getListings } from '../api/listings';
 import { getOrCreateConversation } from '../api/chat';
+import { requestTransaction } from '../api/transactions';
 import { useAuth } from '../contexts/AuthContext';
 
-const HEALTH_URL = 'http://172.16.1.252:3000/health';
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { signOut, user } = useAuth();
@@ -25,7 +25,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [health, setHealth] = useState('');
+  
   // filters
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
@@ -121,13 +121,21 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [q, category, minPrice, maxPrice, itemCondition, locationCity, sortBy, sortOrder, limit]);
 
-  const checkHealth = async () => {
+  // Request-to-buy state
+  const [requestedIds, setRequestedIds] = useState<string[]>([]);
+  const [requestingId, setRequestingId] = useState<string | null>(null);
+
+  const handleRequestBuy = async (listingId: string) => {
+    if (requestingId) return;
+    setRequestingId(listingId);
     try {
-      const res = await fetch(HEALTH_URL);
-      const data = await res.json();
-      setHealth(data.status || 'Healthy');
-    } catch (err) {
-      setHealth('Error connecting to backend');
+      await requestTransaction(listingId);
+      setRequestedIds((prev) => (prev.includes(listingId) ? prev : [...prev, listingId]));
+      Alert.alert('Success', 'Purchase request sent to seller.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to request purchase');
+    } finally {
+      setRequestingId(null);
     }
   };
 
@@ -182,12 +190,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         </View>
       </View>
 
-      <View style={styles.healthSection}>
-        <Pressable style={styles.healthButton} onPress={checkHealth}>
-          <Text style={styles.healthButtonText}>Check Backend Health</Text>
-        </Pressable>
-        {health ? <Text style={styles.healthText}>{health}</Text> : null}
-      </View>
+      {/* health check removed */}
 
       {loading && !refreshing ? (
         <ActivityIndicator size="large" color="#2563EB" style={styles.loader} />
@@ -255,16 +258,29 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                     <Text style={styles.editButtonText}>Edit</Text>
                   </Pressable>
                 ) : (
-                  <Pressable
-                    style={[styles.editButton, { backgroundColor: '#10B981' }]}
-                    onPress={() => handleMessageSeller(item.id)}
-                    disabled={messagingListingId === item.id}
-                  >
-                    {messagingListingId === item.id
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Text style={styles.editButtonText}>Message Seller</Text>
-                    }
-                  </Pressable>
+                  <View style={{ flexDirection: 'row', gap: 8, padding: 12 }}>
+                    <Pressable
+                      style={[styles.actionButton, { backgroundColor: '#10B981' }]}
+                      onPress={() => handleMessageSeller(item.id)}
+                      disabled={messagingListingId === item.id}
+                    >
+                      {messagingListingId === item.id
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Text style={styles.actionButtonText}>Message Seller</Text>
+                      }
+                    </Pressable>
+
+                    <Pressable
+                      style={[styles.actionButton, { backgroundColor: requestedIds.includes(item.id) ? '#9CA3AF' : '#2563EB' }]}
+                      onPress={() => handleRequestBuy(item.id)}
+                      disabled={requestingId === item.id || requestedIds.includes(item.id)}
+                    >
+                      {requestingId === item.id
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Text style={styles.actionButtonText}>{requestedIds.includes(item.id) ? 'Requested' : 'Request to Buy'}</Text>
+                      }
+                    </Pressable>
+                  </View>
                 )}
               </View>
             );
@@ -295,10 +311,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   createButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  healthSection: { padding: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  healthButton: { backgroundColor: '#10B981', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center' },
-  healthButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  healthText: { marginTop: 8, color: '#059669', fontWeight: '500', textAlign: 'center' },
+  actionButton: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  actionButtonText: { color: '#fff', fontWeight: '600' },
   loader: { flex: 1, justifyContent: 'center' },
   listContent: { padding: 16, paddingBottom: 24 },
   listCard: {
