@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  Pressable,
   StyleSheet,
   Alert,
   ActivityIndicator,
@@ -13,7 +12,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../theme/ThemeProvider';
-import Button from '../components/ui/Button';
+import { Card, Button } from '../components/ui';
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
   const { signIn } = useAuth();
@@ -53,8 +52,8 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           <Text style={[styles.subtitle, { color: theme.colors.muted }]}>Buy & sell pre-loved items</Text>
         </View>
 
-        <View style={[styles.formSection, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-          <Text style={[styles.formTitle, { color: '#111827' }]}>Log In</Text>
+        <Card style={[styles.formSection, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[theme.typography.h2, { marginBottom: 12, color: '#111827' }]}>Log In</Text>
 
           <TextInput
             style={styles.input}
@@ -83,7 +82,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
             <Text style={[styles.footerText, { color: theme.colors.muted }]}>Don't have an account? </Text>
             <Text onPress={() => navigation.navigate('SignUp')} style={[styles.linkText, { color: theme.colors.primary }]}>Sign Up</Text>
           </View>
-        </View>
+        </Card>
       </ScrollView>
     </KeyboardAvoidingView>
   );
