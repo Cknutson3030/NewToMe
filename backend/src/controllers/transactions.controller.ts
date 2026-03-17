@@ -95,6 +95,10 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
 
     const { role = 'all', status } = req.query as any;
 
+    // pagination support
+    const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100);
+    const offset = Math.max(parseInt(String(req.query.offset ?? '0')) || 0, 0);
+
     let query = supabaseAdmin.from('transactions').select('id, listing_id, buyer_id, seller_id, status, created_at');
 
     if (role === 'seller') query = query.eq('seller_id', userId);
@@ -103,7 +107,10 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
 
     if (status) query = query.eq('status', String(status));
 
-    const { data, error } = await query.order('created_at', { ascending: false });
+    // apply ordering and range for pagination
+    const start = offset;
+    const end = offset + limit - 1;
+    const { data, error } = await query.order('created_at', { ascending: false }).range(start, end);
     if (error) throw error;
     res.status(200).json({ data });
   } catch (error) {

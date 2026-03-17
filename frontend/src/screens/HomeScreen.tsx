@@ -151,6 +151,12 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           <Pressable style={styles.createButton} onPress={() => navigation.navigate('MyListings')}>
             <Text style={styles.createButtonText}>My Listings</Text>
           </Pressable>
+          <Pressable style={styles.createButton} onPress={() => navigation.navigate('Purchases')}>
+            <Text style={styles.createButtonText}>Purchases</Text>
+          </Pressable>
+          <Pressable style={styles.createButton} onPress={() => navigation.navigate('SellerTransactions')}>
+            <Text style={styles.createButtonText}>Sales</Text>
+          </Pressable>
           <Pressable style={styles.createButton} onPress={() => navigation.navigate('CreateListing')}>
             <Text style={styles.createButtonText}>+ New</Text>
           </Pressable>
