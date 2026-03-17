@@ -114,7 +114,7 @@ export default function MyListingsScreen({ navigation }: { navigation: any }) {
                       {(item.pending_transactions || []).map((t: any) => (
                         <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 14 }}>Buyer: {t.buyer_id}</Text>
+                            <Text style={{ fontSize: 14 }}>Buyer: {t.buyer_email ?? t.buyer_id}</Text>
                             <Text style={{ fontSize: 12, color: '#6B7280' }}>{new Date(t.created_at).toLocaleString()}</Text>
                           </View>
                           <View style={{ flexDirection: 'row', gap: 8 }}>

@@ -68,8 +68,8 @@ export default function PurchasesScreen({ navigation }: { navigation: any }) {
           onEndReached={() => { if (!loadingMore && hasMore) { fetch({ append: true }); } }}
           renderItem={({ item }) => (
             <View style={styles.card}>
-              <Text style={styles.title}>Listing: {item.listing_id}</Text>
-              <Text>Seller: {item.seller_id}</Text>
+              <Text style={styles.title}>{item.listing_title ?? `Listing: ${item.listing_id}`}</Text>
+              <Text>Seller: {item.seller_email ?? item.seller_id}</Text>
               <Text>Status: {item.status}</Text>
               <Text style={styles.time}>{new Date(item.created_at).toLocaleString()}</Text>
             </View>

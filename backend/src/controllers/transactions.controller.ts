@@ -112,7 +112,45 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
     const end = offset + limit - 1;
     const { data, error } = await query.order('created_at', { ascending: false }).range(start, end);
     if (error) throw error;
-    res.status(200).json({ data });
+
+    const rows = data ?? [];
+
+    // Fetch listing titles in batch
+    const listingIds = Array.from(new Set(rows.map((r: any) => String(r.listing_id)).filter(Boolean)));
+    let listingsMap: Record<string, any> = {};
+    if (listingIds.length > 0) {
+      const { data: listingsData, error: listingsError } = await supabaseAdmin
+        .from('listings')
+        .select('id, title')
+        .in('id', listingIds);
+      if (!listingsError && listingsData) {
+        listingsMap = (listingsData as any[]).reduce((acc: any, cur: any) => { acc[String(cur.id)] = cur; return acc; }, {});
+      }
+    }
+
+    // Fetch user emails (buyer and seller) using admin API
+    const userIds = Array.from(new Set(rows.flatMap((r: any) => [r.buyer_id, r.seller_id]).filter(Boolean).map(String)));
+    const usersMap: Record<string, any> = {};
+    await Promise.all(userIds.map(async (uid) => {
+      try {
+        // supabase-js v2 admin API
+        const result = await (supabaseAdmin.auth as any).admin.getUserById(uid);
+        const u = result?.data?.user ?? null;
+        if (u) usersMap[uid] = u;
+      } catch (e) {
+        // ignore per-user fetch errors
+      }
+    }));
+
+    // Attach listing title and user emails
+    const enriched = rows.map((r: any) => ({
+      ...r,
+      listing_title: listingsMap[String(r.listing_id)]?.title ?? null,
+      buyer_email: usersMap[String(r.buyer_id)]?.email ?? null,
+      seller_email: usersMap[String(r.seller_id)]?.email ?? null,
+    }));
+
+    res.status(200).json({ data: enriched });
   } catch (error) {
     next(error);
   }
