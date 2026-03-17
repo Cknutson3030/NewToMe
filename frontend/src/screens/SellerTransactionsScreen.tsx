@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Pressable, Alert, RefreshControl } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Pressable, Alert, RefreshControl, Image } from 'react-native';
 import { listMyTransactions, respondTransaction } from '../api/transactions';
 
 export default function SellerTransactionsScreen({ navigation }: { navigation: any }) {
@@ -78,6 +78,9 @@ export default function SellerTransactionsScreen({ navigation }: { navigation: a
           onEndReached={() => { if (!loadingMore && hasMore) { fetch({ append: true }); } }}
           renderItem={({ item }) => (
             <View style={styles.card}>
+              {item.listing_image_url ? (
+                <Image source={{ uri: item.listing_image_url }} style={{ width: '100%', height: 140, borderRadius: 8, marginBottom: 8 }} />
+              ) : null}
               <Text style={styles.title}>{item.listing_title ?? `Listing: ${item.listing_id}`}</Text>
               <Text>Buyer: {item.buyer_email ?? item.buyer_id}</Text>
               <Text>Status: {item.status}</Text>

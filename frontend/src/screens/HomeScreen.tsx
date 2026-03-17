@@ -125,18 +125,9 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
   const [requestingId, setRequestingId] = useState<string | null>(null);
 
-  const handleRequestBuy = async (listingId: string) => {
-    if (requestingId) return;
-    setRequestingId(listingId);
-    try {
-      await requestTransaction(listingId);
-      setRequestedIds((prev) => (prev.includes(listingId) ? prev : [...prev, listingId]));
-      Alert.alert('Success', 'Purchase request sent to seller.');
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to request purchase');
-    } finally {
-      setRequestingId(null);
-    }
+  const handleRequestBuy = async (listingId: string, listingTitle?: string, listingImage?: string) => {
+    // Navigate to Offer screen where buyer can enter offered price
+    navigation.navigate('Offer', { listingId, listingTitle, listingImage });
   };
 
   // Render UI
@@ -278,7 +269,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
                     <Pressable
                       style={[styles.actionButton, { backgroundColor: requestedIds.includes(item.id) ? '#9CA3AF' : '#2563EB' }]}
-                      onPress={() => handleRequestBuy(item.id)}
+                      onPress={() => handleRequestBuy(item.id, item.title, item.listing_images?.[0]?.image_url ?? item.listing_image_url)}
                       disabled={requestingId === item.id || requestedIds.includes(item.id)}
                     >
                       {requestingId === item.id

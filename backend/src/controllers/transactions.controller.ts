@@ -15,8 +15,9 @@ export const requestTransaction: RequestHandler = async (req, res, next) => {
   try {
     const { user } = req as AuthenticatedRequest;
     const buyerId = user?.id;
-    const { listingId } = req.body;
+    const { listingId, offeredPrice, notes } = req.body;
     if (!buyerId || !listingId) throw new AppError(400, "Missing buyer or listing");
+    if (offeredPrice === undefined || offeredPrice === null) throw new AppError(400, "Missing offered price");
 
     // Get listing and seller
     const { data: listing, error: listingError } = await supabaseAdmin
@@ -28,14 +29,16 @@ export const requestTransaction: RequestHandler = async (req, res, next) => {
     if (listingError || !listing) throw new AppError(404, "Listing not found or unavailable");
     if (listing.owner_user_id === buyerId) throw new AppError(400, "Cannot buy your own listing");
 
-    // Create transaction
+    // Create transaction (store offered price and optional notes)
     const { data, error } = await supabaseAdmin
       .from("transactions")
       .insert({
         listing_id: listingId,
         buyer_id: buyerId,
         seller_id: listing.owner_user_id,
-        status: "pending"
+        status: "pending",
+        offered_price: offeredPrice,
+        notes: notes ?? null,
       })
       .select()
       .single();
@@ -128,6 +131,23 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
       }
     }
 
+    // Fetch first listing image per listing
+    let listingImageMap: Record<string, string | null> = {};
+    if (listingIds.length > 0) {
+      const { data: imgsData, error: imgsError } = await supabaseAdmin
+        .from('listing_images')
+        .select('listing_id, image_url, sort_order')
+        .in('listing_id', listingIds)
+        .order('sort_order', { ascending: true });
+      if (!imgsError && imgsData) {
+        // pick first image per listing
+        for (const row of imgsData as any[]) {
+          const lid = String(row.listing_id);
+          if (!listingImageMap[lid]) listingImageMap[lid] = row.image_url ?? null;
+        }
+      }
+    }
+
     // Fetch user emails (buyer and seller) using admin API
     const userIds = Array.from(new Set(rows.flatMap((r: any) => [r.buyer_id, r.seller_id]).filter(Boolean).map(String)));
     const usersMap: Record<string, any> = {};
@@ -146,6 +166,7 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
     const enriched = rows.map((r: any) => ({
       ...r,
       listing_title: listingsMap[String(r.listing_id)]?.title ?? null,
+      listing_image_url: listingImageMap[String(r.listing_id)] ?? null,
       buyer_email: usersMap[String(r.buyer_id)]?.email ?? null,
       seller_email: usersMap[String(r.seller_id)]?.email ?? null,
     }));

@@ -14,11 +14,11 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 }
 
 // Buyer requests to purchase a listing
-export async function requestTransaction(listingId: string) {
+export async function requestTransaction(listingId: string, offeredPrice: number, notes?: string) {
   const res = await fetch(`${API_BASE_URL}/transactions/request`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ listingId }),
+    body: JSON.stringify({ listingId, offeredPrice, notes }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Failed to request transaction: ${res.status}`);
