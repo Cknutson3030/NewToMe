@@ -276,13 +276,13 @@ const styles = StyleSheet.create({
 
 function ListingCardPlaceholderButtons({ navigation, signOut }: any) {
   return (
-    <>
-      <View style={{ flexDirection: 'row' }}>
-        <Text onPress={() => navigation.navigate('Conversations')} style={{ color: '#2563EB', marginRight: 12 }}>Messages</Text>
-        <Text onPress={() => navigation.navigate('MyListings')} style={{ color: '#2563EB', marginRight: 12 }}>My Listings</Text>
-        <Text onPress={() => navigation.navigate('CreateListing')} style={{ color: '#2563EB', marginRight: 12 }}>+ New</Text>
-        <Text onPress={signOut} style={{ color: '#6B7280' }}>Sign Out</Text>
-      </View>
-    </>
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('Conversations')}>Messages</Button>
+      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('MyListings')}>My Listings</Button>
+      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('CreateListing')}>+ New</Button>
+      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('Purchases')}>Purchases</Button>
+      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('SellerTransactions')}>Seller Transactions</Button>
+      <Button variant="ghost" style={{ marginLeft: 8 }} onPress={signOut}>Sign Out</Button>
+    </View>
   );
 }

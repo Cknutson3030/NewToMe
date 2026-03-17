@@ -14,6 +14,8 @@ export default function Button({ children, onPress, variant = 'primary', style, 
   const { theme } = useTheme();
   const styles = makeStyles(theme.colors, theme.spacing, theme.radii);
 
+  const labelStyle = variant === 'ghost' ? styles.labelGhost : styles.labelPrimary;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -21,7 +23,7 @@ export default function Button({ children, onPress, variant = 'primary', style, 
       onPress={onPress}
       style={({ pressed }) => [styles.base, variant === 'ghost' ? styles.ghost : styles.primary, pressed && styles.pressed, style]}
     >
-      <Text style={styles.label as TextStyle}>{children as any}</Text>
+      <Text style={labelStyle as TextStyle}>{children as any}</Text>
     </Pressable>
   );
 }
@@ -44,5 +46,6 @@ const makeStyles = (colors: any, spacing: any, radii: any) =>
       borderColor: colors.border,
     },
     pressed: { opacity: 0.85 },
-    label: { color: '#fff', fontWeight: '600' },
+    labelPrimary: { color: '#fff', fontWeight: '600' },
+    labelGhost: { color: colors.primary, fontWeight: '600' },
   });
