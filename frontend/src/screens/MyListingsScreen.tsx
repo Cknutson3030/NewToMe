@@ -13,11 +13,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getMyListings } from '../api/listings';
 import { listMyTransactions, respondTransaction } from '../api/transactions';
+import { useTheme } from '../theme/ThemeProvider';
+import Button from '../components/ui/Button';
 
 export default function MyListingsScreen({ navigation }: { navigation: any }) {
   const [listings, setListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { theme } = useTheme();
 
   const fetchMyListings = useCallback(async () => {
     try {
@@ -65,9 +68,9 @@ export default function MyListingsScreen({ navigation }: { navigation: any }) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]} edges={['bottom']}>
       {loading ? (
-        <ActivityIndicator size="large" color="#2563EB" style={styles.loader} />
+        <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
       ) : (
         <FlatList
           data={listings}
@@ -100,12 +103,7 @@ export default function MyListingsScreen({ navigation }: { navigation: any }) {
                     )}
                     <Text style={styles.status}>{item.status}</Text>
                   </View>
-                  <Pressable
-                    style={styles.editButton}
-                    onPress={() => navigation.navigate('EditListing', { listing: item })}
-                  >
-                    <Text style={styles.editButtonText}>Edit</Text>
-                  </Pressable>
+                  <Button variant="ghost" onPress={() => navigation.navigate('EditListing', { listing: item })}>Edit</Button>
 
                   {/* Pending transactions for this listing (if any) */}
                   {(item.pending_transactions || []).length > 0 && (
@@ -120,24 +118,16 @@ export default function MyListingsScreen({ navigation }: { navigation: any }) {
                             <Text style={{ fontSize: 12, color: '#6B7280' }}>{new Date(t.created_at).toLocaleString()}</Text>
                           </View>
                           <View style={{ flexDirection: 'row', gap: 8 }}>
-                            <Pressable
-                              style={[styles.approveButton]}
-                              onPress={async () => {
+                            <Button style={{ marginRight: 8 }} onPress={async () => {
                                 try {
                                   await respondTransaction(t.id, 'approved');
                                   Alert.alert('Success', 'Transaction approved');
-                                  // update local state: remove txn and mark listing sold
                                   setListings((prev) => prev.map((l: any) => l.id === item.id ? { ...l, status: 'sold', pending_transactions: (l.pending_transactions || []).filter((pt: any) => pt.id !== t.id) } : l));
                                 } catch (err: any) {
                                   Alert.alert('Error', err.message || 'Failed to approve');
                                 }
-                              }}
-                            >
-                              <Text style={{ color: '#fff', fontWeight: '700' }}>Approve</Text>
-                            </Pressable>
-                            <Pressable
-                              style={[styles.rejectButton]}
-                              onPress={async () => {
+                              }}>Approve</Button>
+                              <Button variant="ghost" onPress={async () => {
                                 try {
                                   await respondTransaction(t.id, 'rejected');
                                   Alert.alert('Success', 'Transaction rejected');
@@ -145,10 +135,7 @@ export default function MyListingsScreen({ navigation }: { navigation: any }) {
                                 } catch (err: any) {
                                   Alert.alert('Error', err.message || 'Failed to reject');
                                 }
-                              }}
-                            >
-                              <Text style={{ color: '#fff', fontWeight: '700' }}>Reject</Text>
-                            </Pressable>
+                              }}>Reject</Button>
                           </View>
                         </View>
                       ))}

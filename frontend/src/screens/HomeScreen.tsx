@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator, Image, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getListings } from '../api/listings';
+import Button from '../components/ui/Button';
 import { getOrCreateConversation } from '../api/chat';
 import { requestTransaction } from '../api/transactions';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../theme/ThemeProvider';
+import ListingCard from '../components/ListingCard';
 
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { signOut, user } = useAuth();
+  const { theme } = useTheme();
   const [messagingListingId, setMessagingListingId] = useState<string | null>(null);
 
   const handleMessageSeller = useCallback(async (listingId: string) => {
@@ -132,29 +136,12 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
   // Render UI
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Listings</Text>
+      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }] }>
+        <Text style={[styles.title, theme.typography.h1]}>Listings</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', flex: 1, marginLeft: 8 }}>
-          <Pressable style={styles.createButton} onPress={() => navigation.navigate('Conversations')}>
-            <Text style={styles.createButtonText}>Messages</Text>
-          </Pressable>
-          <Pressable style={styles.createButton} onPress={() => navigation.navigate('MyListings')}>
-            <Text style={styles.createButtonText}>My Listings</Text>
-          </Pressable>
-          <Pressable style={styles.createButton} onPress={() => navigation.navigate('Purchases')}>
-            <Text style={styles.createButtonText}>Purchases</Text>
-          </Pressable>
-          <Pressable style={styles.createButton} onPress={() => navigation.navigate('SellerTransactions')}>
-            <Text style={styles.createButtonText}>Sales</Text>
-          </Pressable>
-          <Pressable style={styles.createButton} onPress={() => navigation.navigate('CreateListing')}>
-            <Text style={styles.createButtonText}>+ New</Text>
-          </Pressable>
-          <Pressable style={[styles.createButton, { backgroundColor: '#6B7280' }]} onPress={signOut}>
-            <Text style={styles.createButtonText}>Sign Out</Text>
-          </Pressable>
+          <ListingCardPlaceholderButtons navigation={navigation} signOut={signOut} />
         </View>
       </View>
 
@@ -184,7 +171,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           <Pressable style={styles.sortButton} onPress={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}>
             <Text style={styles.sortButtonText}>Order: {sortOrder}</Text>
           </Pressable>
-          <Button title="Apply" onPress={() => fetchListings({ q, category, item_condition: itemCondition, location_city: locationCity, min_price: minPrice, max_price: maxPrice, sort_by: sortBy, sort_order: sortOrder }, false)} />
+          <Button onPress={() => fetchListings({ q, category, item_condition: itemCondition, location_city: locationCity, min_price: minPrice, max_price: maxPrice, sort_by: sortBy, sort_order: sortOrder }, false)}>Apply</Button>
         </View>
       </View>
 
@@ -220,71 +207,19 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           }}
           ListFooterComponent={loadingMore ? <ActivityIndicator style={{margin:12}} /> : null}
           renderItem={({ item }) => {
-            const firstImage = item.listing_images?.sort((a: any, b: any) => a.sort_order - b.sort_order)?.[0];
             const isOwner = user?.id === item.owner_user_id;
             return (
-              <View style={styles.listCard}>
-                {firstImage?.image_url && (
-                  <Image
-                    source={{ uri: firstImage.image_url }}
-                    style={styles.listImage}
-                    resizeMode="cover"
-                  />
-                )}
-                <Text style={styles.listTitle}>{item.title}</Text>
-                <Text style={styles.listDesc}>{item.description}</Text>
-                <View style={styles.details}>
-                  <Text style={styles.detailText}>
-                    <Text style={{ fontWeight: 'bold' }}>Price:</Text> ${item.price}
-                  </Text>
-                  <Text style={styles.detailText}>
-                    <Text style={{ fontWeight: 'bold' }}>Category:</Text> {item.category}
-                  </Text>
-                </View>
-                <View style={styles.details}>
-                  <Text style={styles.detailText}>
-                    <Text style={{ fontWeight: 'bold' }}>Location:</Text> {item.location_city}
-                  </Text>
-                  <Text style={styles.detailText}>
-                    <Text style={{ fontWeight: 'bold' }}>Condition:</Text> {item.item_condition}
-                  </Text>
-                </View>
-                {isOwner ? (
-                  <Pressable
-                    style={styles.editButton}
-                    onPress={() => navigation.navigate('EditListing', { listing: item })}
-                  >
-                    <Text style={styles.editButtonText}>Edit</Text>
-                  </Pressable>
-                ) : (
-                  <View style={{ flexDirection: 'row', gap: 8, padding: 12 }}>
-                    <Pressable
-                      style={[styles.actionButton, { backgroundColor: '#10B981' }]}
-                      onPress={() => handleMessageSeller(item.id)}
-                      disabled={messagingListingId === item.id}
-                    >
-                      {messagingListingId === item.id
-                        ? <ActivityIndicator size="small" color="#fff" />
-                        : <Text style={styles.actionButtonText}>Message Seller</Text>
-                      }
-                    </Pressable>
-
-                    <Pressable
-                      style={[styles.actionButton, { backgroundColor: requestedIds.includes(item.id) ? '#9CA3AF' : '#2563EB' }]}
-                      onPress={() => handleRequestBuy(item.id, item.title, item.listing_images?.[0]?.image_url ?? item.listing_image_url)}
-                      disabled={requestingId === item.id || requestedIds.includes(item.id)}
-                    >
-                      {requestingId === item.id
-                        ? <ActivityIndicator size="small" color="#fff" />
-                        : <Text style={styles.actionButtonText}>{requestedIds.includes(item.id) ? 'Requested' : 'Request to Buy'}</Text>
-                      }
-                    </Pressable>
-                  </View>
-                )}
-              </View>
+              <ListingCard
+                item={item}
+                isOwner={isOwner}
+                onPressEdit={(it) => navigation.navigate('EditListing', { listing: it })}
+                onPressMessage={(id) => handleMessageSeller(id)}
+                onPressRequest={(id) => handleRequestBuy(id, item.title, item.listing_images?.[0]?.image_url ?? item.listing_image_url)}
+                requested={requestedIds.includes(item.id)}
+              />
             );
           }}
-          ListEmptyComponent={<Text style={styles.empty}>No listings yet.</Text>}
+          ListEmptyComponent={<Text style={[styles.empty, { color: theme.colors.muted }]}>No listings yet.</Text>}
         />
         )}
       </KeyboardAvoidingView>
@@ -293,24 +228,15 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F7F8FA' },
+  safeArea: { flex: 1 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
   },
   title: { fontSize: 28, fontWeight: '700' },
-  createButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  createButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   actionButton: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   actionButtonText: { color: '#fff', fontWeight: '600' },
   loader: { flex: 1, justifyContent: 'center' },
@@ -351,3 +277,16 @@ const styles = StyleSheet.create({
   sortButtonText: { color: '#111827', fontWeight: '600' },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 24, fontSize: 16 },
 });
+
+function ListingCardPlaceholderButtons({ navigation, signOut }: any) {
+  return (
+    <>
+      <View style={{ flexDirection: 'row' }}>
+        <Text onPress={() => navigation.navigate('Conversations')} style={{ color: '#2563EB', marginRight: 12 }}>Messages</Text>
+        <Text onPress={() => navigation.navigate('MyListings')} style={{ color: '#2563EB', marginRight: 12 }}>My Listings</Text>
+        <Text onPress={() => navigation.navigate('CreateListing')} style={{ color: '#2563EB', marginRight: 12 }}>+ New</Text>
+        <Text onPress={signOut} style={{ color: '#6B7280' }}>Sign Out</Text>
+      </View>
+    </>
+  );
+}

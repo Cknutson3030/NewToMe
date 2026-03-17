@@ -3,6 +3,8 @@ import { View, Text, TextInput, Button, Alert, StyleSheet, KeyboardAvoidingView,
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { createListing as apiCreateListing, uploadListingImages } from '../api/listings';
+import { useTheme } from '../theme/ThemeProvider';
+import Button from '../components/ui/Button';
 
 // Convert image to JPEG (handles HEIC from iPhone)
 const convertToJpeg = async (uri: string): Promise<{ uri: string; mimeType: string }> => {
@@ -15,6 +17,7 @@ const convertToJpeg = async (uri: string): Promise<{ uri: string; mimeType: stri
 };
 
 export default function CreateListingScreen({ navigation }: { navigation: any }) {
+    const { theme } = useTheme();
     // State for form fields
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
@@ -151,7 +154,7 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
               <Text style={styles.header}>Create New Listing</Text>
 
-              <TextInput
+            <TextInput
                   placeholder="Title *"
                   value={title}
                   onChangeText={setTitle}
@@ -196,15 +199,15 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
                 style={styles.input}
             />
 
-            <Button title="Pick Images (Max 5)" onPress={pickImages} />
+            <Button onPress={pickImages}>Pick Images (Max 5)</Button>
             <View style={{ marginTop: 8 }}>
-                <Button title="Take Photo" onPress={takePhoto} />
+                <Button variant="ghost" onPress={takePhoto}>Take Photo</Button>
             </View>
             {images.length > 0 && (
                 <Text style={{ marginTop: 8, marginBottom: 8 }}>Selected {images.length} image(s)</Text>
             )}
 
-                            <Button title="Create Listing" onPress={createListing} />
+                            <Button onPress={createListing}>Create Listing</Button>
                         </ScrollView>
                     </TouchableWithoutFeedback>
                 </KeyboardAvoidingView>

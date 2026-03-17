@@ -12,9 +12,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../theme/ThemeProvider';
+import Button from '../components/ui/Button';
 
 export default function SignUpScreen({ navigation }: { navigation: any }) {
   const { signUp } = useAuth();
+  const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -54,17 +57,17 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.headerSection}>
-          <Text style={styles.appName}>NewToMe</Text>
-          <Text style={styles.subtitle}>Create your account</Text>
+          <Text style={[styles.appName, { color: theme.colors.primary }]}>NewToMe</Text>
+          <Text style={[styles.subtitle, { color: theme.colors.muted }]}>Create your account</Text>
         </View>
 
-        <View style={styles.formSection}>
-          <Text style={styles.formTitle}>Sign Up</Text>
+        <View style={[styles.formSection, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[styles.formTitle, { color: '#111827' }]}>Sign Up</Text>
 
           <TextInput
             style={styles.input}
@@ -97,23 +100,11 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
             autoComplete="new-password"
           />
 
-          <Pressable
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSignUp}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Sign Up</Text>
-            )}
-          </Pressable>
+          <Button onPress={handleSignUp}>{loading ? 'Creating...' : 'Sign Up'}</Button>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Already have an account? </Text>
-            <Pressable onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.linkText}>Log In</Text>
-            </Pressable>
+            <Text style={[styles.footerText, { color: theme.colors.muted }]}>Already have an account? </Text>
+            <Text onPress={() => navigation.navigate('Login')} style={[styles.linkText, { color: theme.colors.primary }]}>Log In</Text>
           </View>
         </View>
       </ScrollView>

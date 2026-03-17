@@ -12,9 +12,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../theme/ThemeProvider';
+import Button from '../components/ui/Button';
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
   const { signIn } = useAuth();
+  const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,17 +44,17 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.headerSection}>
-          <Text style={styles.appName}>NewToMe</Text>
-          <Text style={styles.subtitle}>Buy & sell pre-loved items</Text>
+          <Text style={[styles.appName, { color: theme.colors.primary }]}>NewToMe</Text>
+          <Text style={[styles.subtitle, { color: theme.colors.muted }]}>Buy & sell pre-loved items</Text>
         </View>
 
-        <View style={styles.formSection}>
-          <Text style={styles.formTitle}>Log In</Text>
+        <View style={[styles.formSection, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[styles.formTitle, { color: '#111827' }]}>Log In</Text>
 
           <TextInput
             style={styles.input}
@@ -74,23 +77,11 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
             autoComplete="password"
           />
 
-          <Pressable
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Log In</Text>
-            )}
-          </Pressable>
+          <Button onPress={handleLogin} style={{ marginTop: 8 }}>{loading ? 'Signing in...' : 'Log In'}</Button>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
-            <Pressable onPress={() => navigation.navigate('SignUp')}>
-              <Text style={styles.linkText}>Sign Up</Text>
-            </Pressable>
+            <Text style={[styles.footerText, { color: theme.colors.muted }]}>Don't have an account? </Text>
+            <Text onPress={() => navigation.navigate('SignUp')} style={[styles.linkText, { color: theme.colors.primary }]}>Sign Up</Text>
           </View>
         </View>
       </ScrollView>
