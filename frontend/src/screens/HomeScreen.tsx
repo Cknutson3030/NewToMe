@@ -129,10 +129,18 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
   const [requestingId, setRequestingId] = useState<string | null>(null);
 
-  const handleRequestBuy = async (listingId: string, listingTitle?: string, listingImage?: string) => {
-    // Navigate to Offer screen where buyer can enter offered price
-    navigation.navigate('Offer', { listingId, listingTitle, listingImage });
-  };
+  const handleEdit = useCallback((it: any) => navigation.navigate('EditListing', { listing: it }), [navigation]);
+
+  const handleRequestBuy = useCallback((item: any) => {
+    navigation.navigate('Offer', {
+      listingId: item.id,
+      listingTitle: item.title,
+      listingImage: item.listing_images?.[0]?.image_url ?? item.listing_image_url,
+      listingPrice: item.price,
+      listingLocation: item.location_city,
+      listingCondition: item.item_condition,
+    });
+  }, [navigation]);
 
   // Render UI
   return (
@@ -208,9 +216,9 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               <ListingCard
                 item={item}
                 isOwner={isOwner}
-                onPressEdit={(it) => navigation.navigate('EditListing', { listing: it })}
-                onPressMessage={(id) => handleMessageSeller(id)}
-                onPressRequest={(id) => handleRequestBuy(id, item.title, item.listing_images?.[0]?.image_url ?? item.listing_image_url)}
+                onPressEdit={handleEdit}
+                onPressMessage={handleMessageSeller}
+                onPressRequest={handleRequestBuy}
                 requested={requestedIds.includes(item.id)}
               />
             );
@@ -218,6 +226,11 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           ListEmptyComponent={<Text style={[styles.empty, { color: theme.colors.muted }]}>No listings yet.</Text>}
         />
         )}
+
+      <View style={[styles.bottomBar, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }] }>
+        <BottomNavButtons navigation={navigation} />
+      </View>
+
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -272,17 +285,32 @@ const styles = StyleSheet.create({
   sortButton: { backgroundColor: '#F3F4F6', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, marginRight: 8 },
   sortButtonText: { color: '#111827', fontWeight: '600' },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 24, fontSize: 16 },
+  bottomBar: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 1,
+  },
 });
 
 function ListingCardPlaceholderButtons({ navigation, signOut }: any) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('Conversations')}>Messages</Button>
-      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('MyListings')}>My Listings</Button>
-      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('CreateListing')}>+ New</Button>
-      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('Purchases')}>Purchases</Button>
-      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('SellerTransactions')}>Seller Transactions</Button>
       <Button variant="ghost" style={{ marginLeft: 8 }} onPress={signOut}>Sign Out</Button>
+    </View>
+  );
+}
+
+function BottomNavButtons({ navigation }: any) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' }}>
+      <Button variant="ghost" onPress={() => navigation.navigate('MyListings')}>My Listings</Button>
+      <Button onPress={() => navigation.navigate('CreateListing')}>+ New</Button>
+      <Button variant="ghost" onPress={() => navigation.navigate('Purchases')}>Purchases</Button>
     </View>
   );
 }
