@@ -56,7 +56,7 @@ export default function SellerTransactionsScreen({ navigation }: { navigation: a
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Text style={[styles.header, theme.typography.h2]}>Seller Transactions</Text>
+      <Text style={[theme.typography.h2, { padding: 16 }]}>Seller Transactions</Text>
       <View style={styles.filterRow}>
         {(['pending','approved','rejected','all'] as const).map(s => (
           <Button key={s} variant={statusFilter === s ? 'primary' : 'ghost'} style={{ marginRight: 8 }} onPress={() => { setStatusFilter(s as any); setRefreshing(true); fetch({ append: false }); }}>
