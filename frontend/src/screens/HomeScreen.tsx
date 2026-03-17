@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator, Image, RefreshControl, TextInput, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, Button, ActivityIndicator, Image, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getListings } from '../api/listings';
 import { getOrCreateConversation } from '../api/chat';
@@ -133,6 +133,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   // Render UI
   return (
     <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}>
       <View style={styles.header}>
         <Text style={styles.title}>Listings</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', flex: 1, marginLeft: 8 }}>
@@ -201,6 +202,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
           }
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.listContent, { paddingBottom: 140 }]}
           onEndReachedThreshold={0.5}
           onEndReached={() => {
             if (!loadingMore && hasMore) {
@@ -284,7 +287,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           }}
           ListEmptyComponent={<Text style={styles.empty}>No listings yet.</Text>}
         />
-      )}
+        </KeyboardAvoidingView>
+        )}
     </SafeAreaView>
   );
 }

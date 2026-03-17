@@ -102,7 +102,7 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
     const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100);
     const offset = Math.max(parseInt(String(req.query.offset ?? '0')) || 0, 0);
 
-    let query = supabaseAdmin.from('transactions').select('id, listing_id, buyer_id, seller_id, status, created_at');
+    let query = supabaseAdmin.from('transactions').select('id, listing_id, buyer_id, seller_id, status, offered_price, notes, created_at');
 
     if (role === 'seller') query = query.eq('seller_id', userId);
     else if (role === 'buyer') query = query.eq('buyer_id', userId);
@@ -124,7 +124,7 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
     if (listingIds.length > 0) {
       const { data: listingsData, error: listingsError } = await supabaseAdmin
         .from('listings')
-        .select('id, title')
+        .select('id, title, price')
         .in('id', listingIds);
       if (!listingsError && listingsData) {
         listingsMap = (listingsData as any[]).reduce((acc: any, cur: any) => { acc[String(cur.id)] = cur; return acc; }, {});
@@ -166,7 +166,10 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
     const enriched = rows.map((r: any) => ({
       ...r,
       listing_title: listingsMap[String(r.listing_id)]?.title ?? null,
+      listing_price: listingsMap[String(r.listing_id)]?.price ?? null,
       listing_image_url: listingImageMap[String(r.listing_id)] ?? null,
+      offered_price: r.offered_price ?? null,
+      notes: r.notes ?? null,
       buyer_email: usersMap[String(r.buyer_id)]?.email ?? null,
       seller_email: usersMap[String(r.seller_id)]?.email ?? null,
     }));
