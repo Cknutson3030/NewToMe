@@ -18,31 +18,9 @@ app.use('/uploads', express.static(uploadsDir));
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Helper: fetch with timeout and retries to handle transient network errors (socket hang up)
-const fetchWithRetry = async (url, opts = {}) => {
-  const maxRetries = 3;
-  const baseDelay = 800; // ms
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timeoutMs = opts.timeoutMs || 60000; // default 60s
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const merged = Object.assign({}, opts, { signal: controller.signal });
-      const resp = await fetch(url, merged);
-      clearTimeout(timeout);
-      return resp;
-    } catch (err) {
-      clearTimeout(timeout);
-      // If aborted due to timeout or a transient network error, retry with backoff
-      const isLast = attempt + 1 >= maxRetries;
-      const shouldRetry = err && (err.type === 'system' || err.name === 'AbortError' || err.code === 'ECONNRESET');
-      console.warn(`fetchWithRetry attempt ${attempt + 1} failed`, err && (err.message || err.code));
-      if (!shouldRetry || isLast) throw err;
-      // backoff
-      await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt)));
-    }
-  }
-};
+// Shared fetch helper and provider adapters are implemented in separate modules
+const fetchWithRetry = require('./utils/fetchWithRetry');
+const providers = require('./providers');
 
 // Default generation parameters (configurable via env)
 // Do not set a server-side default for max output tokens; allow the API to choose unless explicitly configured.
@@ -123,9 +101,9 @@ const PROVIDER_MAP = {
     'gpt-5-mini': { provider: 'openai', model: 'gpt-5-mini' }
   },
   Gemini: {
-    'gemini-image-1': { provider: 'google', model: 'gemini.vision.v1' },
-    'gemini-image-2': { provider: 'google', model: 'gemini.vision.v1' },
-    'gemini-image-3': { provider: 'google', model: 'gemini.vision.v1' }
+    'gemini-3.1-pro-preview': { provider: 'google', model: 'gemini-3.1-pro-preview' },
+    'gemini-2.5-pro': { provider: 'google', model: 'gemini-2.5-pro' },
+    'gemini-2.5-flash': { provider: 'google', model: 'gemini-2.5-flash' }
   },
   Claude: {
     'claude-image-1': { provider: 'anthropic', model: 'claude-image-1' },
@@ -301,6 +279,18 @@ app.post('/submit', upload.any(), async (req, res) => {
       }
     ];
 
+    // Helper: normalize and expose usage with explicit input_tokens/output_tokens fields
+    const extractNormalizedUsage = (rawBody) => {
+      try {
+        const usage = (rawBody && rawBody.usage) ? rawBody.usage : (rawBody && rawBody.ai_response && rawBody.ai_response.usage) ? rawBody.ai_response.usage : (rawBody && rawBody.ai_response_slim && rawBody.ai_response_slim.usage) ? rawBody.ai_response_slim.usage : null;
+        if (!usage || typeof usage !== 'object') return { input_tokens: null, output_tokens: null, total_tokens: null };
+        const input_tokens = (usage.input_tokens != null ? usage.input_tokens : (usage.prompt_tokens != null ? usage.prompt_tokens : null));
+        const output_tokens = (usage.output_tokens != null ? usage.output_tokens : (usage.completion_tokens != null ? usage.completion_tokens : null));
+        const total_tokens = (usage.total_tokens != null ? usage.total_tokens : null);
+        return { input_tokens: input_tokens == null ? null : Number(input_tokens), output_tokens: output_tokens == null ? null : Number(output_tokens), total_tokens: total_tokens == null ? null : Number(total_tokens) };
+      } catch (e) { return { input_tokens: null, output_tokens: null, total_tokens: null }; }
+    };
+
     // If mapping not found, fallback to treating `model` as an OpenAI model id
     if (!mapping) {
       if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
@@ -320,16 +310,7 @@ app.post('/submit', upload.any(), async (req, res) => {
         }
       };
       if (modelSupportsReasoning(payloadObj.model)) payloadObj.reasoning = { effort: EFFECTIVE_REASONING_EFFORT };
-      const response = await fetchWithRetry('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payloadObj),
-        timeoutMs: 120000
-      });
-      const body = await response.json();
+      const body = await providers.sendToProvider('openai', payloadObj.model || model, payloadObj, { timeoutMs: 120000 });
       // Log token usage for tuning
       try { console.log('response usage', body.usage || (body.ai_response && body.ai_response.usage) || null); } catch(e){}
       // If the response indicates it was cut off by max_output_tokens, retry once with a larger cap
@@ -357,16 +338,7 @@ app.post('/submit', upload.any(), async (req, res) => {
             }
           };
           if (modelSupportsReasoning(retryPayload.model)) retryPayload.reasoning = { effort: EFFECTIVE_REASONING_EFFORT };
-          const retryResp = await fetchWithRetry('https://api.openai.com/v1/responses', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(retryPayload),
-            timeoutMs: 120000
-          });
-          const retryBody = await retryResp.json();
+          const retryBody = await providers.sendToProvider('openai', retryPayload.model || model, retryPayload, { timeoutMs: 120000 });
           duration += (Date.now() - retryStart);
           console.log('retry response usage', retryBody.usage || (retryBody.ai_response && retryBody.ai_response.usage) || null);
           // prefer the retry body if it looks usable
@@ -408,7 +380,10 @@ app.post('/submit', upload.any(), async (req, res) => {
           } catch (e) { console.warn('parseStructuredOutput error', e && e.message); }
           return null;
         };
-        let parsedOutput = parseStructuredOutput(body);
+        // Allow provider to parse its own response shape first
+        let parsedOutputFromProvider = null;
+        try { parsedOutputFromProvider = await providers.parseResponse('openai', body); } catch (e) { parsedOutputFromProvider = null; }
+        let parsedOutput = (parsedOutputFromProvider && parsedOutputFromProvider.parsedOutput) ? parsedOutputFromProvider.parsedOutput : parseStructuredOutput(body);
         const removeKeysDeep = (obj) => {
           if (!obj || typeof obj !== 'object') return;
           if (Array.isArray(obj)) return obj.forEach(removeKeysDeep);
@@ -465,7 +440,14 @@ app.post('/submit', upload.any(), async (req, res) => {
           } catch (e) { /* ignore */ }
           return clone;
         };
-        const sanitizedRaw = sanitizeRawResponse(body);
+        let sanitizedRaw = null;
+        try {
+          const providerSanitized = parsedOutputFromProvider && parsedOutputFromProvider.sanitizedRaw ? parsedOutputFromProvider.sanitizedRaw : null;
+          sanitizedRaw = providerSanitized ? providerSanitized : sanitizeRawResponse(body);
+          // Ensure ai_response.usage exposes explicit input/output token fallbacks
+          const normalized = extractNormalizedUsage(body || sanitizedRaw);
+          if (sanitizedRaw && typeof sanitizedRaw === 'object') sanitizedRaw.usage = Object.assign({}, sanitizedRaw.usage || {}, normalized);
+        } catch (e) { sanitizedRaw = sanitizeRawResponse(body); }
         // unwrap single-key wrapper objects (e.g., { structured_information_response: { ... } })
         try {
           if (parsedOutput && typeof parsedOutput === 'object' && !Array.isArray(parsedOutput)) {
@@ -554,82 +536,21 @@ app.post('/submit', upload.any(), async (req, res) => {
       return res.json(result);
     }
 
-    // Non-OpenAI providers are not implemented in this harness yet
-    if (mapping.provider !== 'openai') {
+    // Delegate provider call to providers, which now expose a `callProvider`
+    // entrypoint that encapsulates provider-specific logic.
+    const providers = require('./providers');
+    let body, duration, ai_response_slim;
+    try {
+      const result = await providers.callProvider(mapping.provider, mapping, requestItems, schemaObj, providers.sendToProvider, { modelSupportsReasoning, getVerbosityForModel, EFFECTIVE_REASONING_EFFORT, EFFECTIVE_TEXT_VERBOSITY });
+      body = result.body;
+      duration = result.duration;
+      ai_response_slim = result.ai_response_slim;
+    } catch (e) {
+      console.warn('provider handler failed', mapping.provider, e && e.message);
       await cleanupSavedFiles();
-      return res.status(501).json({ error: 'provider_not_implemented', provider: mapping.provider, mapping });
+      return res.status(501).json({ error: 'provider_not_implemented', provider: mapping.provider, mapping, message: e && e.message });
     }
-
-    // OpenAI provider: call Responses API with mapped model id
-    if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
-    const startTime = Date.now();
-    const mappedPayload = {
-      model: mapping.model,
-      input: requestItems,
-      text: {
-        format: {
-          type: 'json_schema',
-          name: schemaObj.name || 'image_analysis',
-          strict: !!schemaObj.strict,
-          schema: schemaObj.schema
-        },
-        verbosity: getVerbosityForModel(mapping.model)
-      }
-    };
-    if (modelSupportsReasoning(mappedPayload.model)) mappedPayload.reasoning = { effort: EFFECTIVE_REASONING_EFFORT };
-    const response = await fetchWithRetry('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(mappedPayload),
-      timeoutMs: 120000
-    });
-    const body = await response.json();
-    // Log token usage for tuning
     try { console.log('response usage', body.usage || (body.ai_response && body.ai_response.usage) || null); } catch(e){}
-    // Retry once with higher max_output_tokens when initial response reports truncation
-    let duration = Date.now() - startTime;
-    let ai_response_slim = null;
-    try { ai_response_slim = (()=>{ try{ const r = body; return { id: r.id, model: r.model, status: r.status, usage: r.usage || (r.ai_response && r.ai_response.usage) || null }; }catch(e){return null;} })(); } catch(e){}
-    const needsRetry = (body && (body.incomplete_details && body.incomplete_details.reason === 'max_output_tokens')) || (body && body.status === 'incomplete' && body.incomplete_details && body.incomplete_details.reason === 'max_output_tokens');
-    if (needsRetry) {
-      try {
-        console.log('retrying mapped response without max_output_tokens (let API default)');
-        const retryStart = Date.now();
-        const retryPayload = {
-          model: mapping.model,
-          input: requestItems,
-          text: {
-            format: {
-              type: 'json_schema',
-              name: schemaObj.name || 'image_analysis',
-              strict: !!schemaObj.strict,
-              schema: schemaObj.schema
-            },
-            verbosity: EFFECTIVE_TEXT_VERBOSITY
-          }
-        };
-        if (modelSupportsReasoning(retryPayload.model)) retryPayload.reasoning = { effort: EFFECTIVE_REASONING_EFFORT };
-        const retryResp = await fetchWithRetry('https://api.openai.com/v1/responses', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(retryPayload),
-          timeoutMs: 120000
-        });
-        const retryBody = await retryResp.json();
-        duration += (Date.now() - retryStart);
-        console.log('retry response usage', retryBody.usage || (retryBody.ai_response && retryBody.ai_response.usage) || null);
-        if (retryBody && (retryBody.status === 'completed' || !(retryBody.incomplete_details && retryBody.incomplete_details.reason === 'max_output_tokens'))) {
-          Object.assign(body, retryBody);
-          ai_response_slim = (()=>{ try{ const r = retryBody; return { id: r.id, model: r.model, status: r.status, usage: r.usage || (r.ai_response && r.ai_response.usage) || null }; }catch(e){return null;} })();
-        }
-      } catch (e) { console.warn('retry failed', e && e.message); }
-    }
     // attempt to extract parsed structured output (robust helper)
     const parseStructuredOutput = (resp) => {
       try {
@@ -659,7 +580,10 @@ app.post('/submit', upload.any(), async (req, res) => {
       } catch (e) { console.warn('parseStructuredOutput error', e && e.message); }
       return null;
     };
-        let parsedOutput = parseStructuredOutput(body);
+      // Provider-specific parsing (allows OpenAI/Gemini to expose their own structure)
+      let parsedOutputFromProvider = null;
+      try { parsedOutputFromProvider = await providers.parseResponse(mapping.provider, body); } catch (e) { parsedOutputFromProvider = null; }
+      let parsedOutput = (parsedOutputFromProvider && parsedOutputFromProvider.parsedOutput) ? parsedOutputFromProvider.parsedOutput : parseStructuredOutput(body);
         // sanitize parsed output: remove verbose fields the frontend doesn't need
         const KEYS_TO_REMOVE = ['assumptions','coefficent','coefficient'];
         const removeKeysDeep = (obj) => {
@@ -727,7 +651,19 @@ app.post('/submit', upload.any(), async (req, res) => {
       } catch (e) { /* ignore */ }
       return clone;
     };
-    const sanitizedRaw = sanitizeRawResponse(body);
+    // If provider returned a sanitizedRaw, use it; otherwise sanitize here
+    const providerParseResult = parsedOutputFromProvider;
+    let sanitizedRaw = providerParseResult && providerParseResult.sanitizedRaw ? providerParseResult.sanitizedRaw : sanitizeRawResponse(body);
+    // If provider provided usage, merge normalized usage
+    try {
+      const normalized = extractNormalizedUsage(body || sanitizedRaw);
+      if (sanitizedRaw && typeof sanitizedRaw === 'object') sanitizedRaw.usage = Object.assign({}, sanitizedRaw.usage || {}, normalized);
+    } catch (e) { /* ignore */ }
+    // Ensure ai_response.usage exposes explicit input/output token fallbacks
+    try {
+      const normalized = extractNormalizedUsage(body || sanitizedRaw);
+      if (sanitizedRaw && typeof sanitizedRaw === 'object') sanitizedRaw.usage = Object.assign({}, sanitizedRaw.usage || {}, normalized);
+    } catch (e) { /* ignore */ }
 
     // build lifecycle summary fields from parsed output when available
     // Normalize values (same logic as above branch)
@@ -806,9 +742,18 @@ app.post('/submit', upload.any(), async (req, res) => {
 // Endpoint to expose available products and model keys to the frontend.
 // The frontend calls this to populate dropdowns automatically when `PROVIDER_MAP` changes.
 app.get('/models', (_req, res) => {
+  // Return an informative model list: keep the original key (used as the
+  // option value sent back to the server) but also include the mapped
+  // provider model id so the UI can show which real model will be used.
   const out = {};
   Object.keys(PROVIDER_MAP).forEach((product) => {
-    out[product] = Object.keys(PROVIDER_MAP[product]);
+    const entries = [];
+    const map = PROVIDER_MAP[product] || {};
+    Object.keys(map).forEach((k) => {
+      const m = map[k] || {};
+      entries.push({ key: k, model: m.model || null, provider: m.provider || null });
+    });
+    out[product] = entries;
   });
   res.json(out);
 });

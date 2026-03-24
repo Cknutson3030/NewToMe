@@ -30,11 +30,12 @@ window.app = (function(){
   function setModels(){
     const p = productEl.value; // current product
     modelEl.innerHTML = '';
-    for(const m of products[p]){
-      // create an option element for each model key
+    // `products[p]` contains objects { key, model, provider }
+    for(const entry of (products[p] || [])){
       const o = document.createElement('option');
-      o.value = m; // this value is sent to the backend and used to resolve mapping
-      o.textContent = m; // visible label in the dropdown
+      o.value = entry.key; // this value is sent to the backend and used to resolve mapping
+      // show both the friendly key and the actual mapped model id for clarity
+      o.textContent = entry.model ? `${entry.key} — ${entry.model}` : entry.key;
       modelEl.appendChild(o);
     }
   }
@@ -146,9 +147,16 @@ window.app = (function(){
       const totalVal = (body && typeof body.total === 'number') ? body.total : (parsed && typeof parsed.total === 'number' ? parsed.total : null);
       const totalTd = document.createElement('td'); totalTd.style.textAlign = 'right'; totalTd.textContent = (totalVal == null ? '' : totalVal.toString()); tr.appendChild(totalTd);
 
-      let tokensVal = null;
-      try { tokensVal = (body && body.ai_response && body.ai_response.usage && (body.ai_response.usage.total_tokens ?? body.ai_response.usage.total_tokens)) ?? (body && body.ai_response_slim && body.ai_response_slim.usage && body.ai_response_slim.usage.total_tokens) ?? null; } catch (e) { tokensVal = null; }
-      const tokenTd = document.createElement('td'); tokenTd.style.textAlign = 'right'; tokenTd.textContent = (tokensVal == null ? '' : String(tokensVal)); tr.appendChild(tokenTd);
+      let inputTokensVal = null, outputTokensVal = null;
+      try {
+        const usage = (body && body.ai_response && body.ai_response.usage) ? body.ai_response.usage : (body && body.ai_response_slim && body.ai_response_slim.usage) ? body.ai_response_slim.usage : null;
+        if (usage) {
+          inputTokensVal = (usage.input_tokens != null ? usage.input_tokens : (usage.prompt_tokens != null ? usage.prompt_tokens : null));
+          outputTokensVal = (usage.output_tokens != null ? usage.output_tokens : (usage.completion_tokens != null ? usage.completion_tokens : null));
+        }
+      } catch (e) { inputTokensVal = null; outputTokensVal = null; }
+      const inputTd = document.createElement('td'); inputTd.style.textAlign = 'right'; inputTd.textContent = (inputTokensVal == null ? '' : String(inputTokensVal)); tr.appendChild(inputTd);
+      const outputTd = document.createElement('td'); outputTd.style.textAlign = 'right'; outputTd.textContent = (outputTokensVal == null ? '' : String(outputTokensVal)); tr.appendChild(outputTd);
 
       const durTd = document.createElement('td'); durTd.style.textAlign = 'right'; durTd.textContent = duration.toString(); tr.appendChild(durTd);
       resultsBody.insertBefore(tr, resultsBody.firstChild);
@@ -271,7 +279,8 @@ window.app = (function(){
   fetch('/models')
     .then((r) => r.json())
     .then((json) => {
-      products = json; // { ProductName: [modelKey1, modelKey2, ...], ... }
+      // server now returns { ProductName: [{key,model,provider}, ...], ... }
+      products = json;
       // populate product dropdown
       productEl.innerHTML = '';
       Object.keys(products).forEach((p) => {
