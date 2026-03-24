@@ -100,8 +100,9 @@ const PROVIDER_MAP = {
     'gpt-4o-mini': { provider: 'openai', model: 'gpt-4o-mini' },
     'gpt-5-mini': { provider: 'openai', model: 'gpt-5-mini' }
   },
+  // The chooseing reason???
   Gemini: {
-    'gemini-3.1-pro-preview': { provider: 'google', model: 'gemini-3.1-pro-preview' },
+    // 'gemini-3.1-pro': { provider: 'google', model: 'gemini-3.1-pro' }, // disabled: not available for this API key
     'gemini-2.5-pro': { provider: 'google', model: 'gemini-2.5-pro' },
     'gemini-2.5-flash': { provider: 'google', model: 'gemini-2.5-flash' }
   },
@@ -532,6 +533,11 @@ app.post('/submit', upload.any(), async (req, res) => {
           total: Number.isFinite(total) ? total : null
         }
       };
+      // Build ChatGPT-like message wrapper for frontend compatibility
+      try {
+        const prettyText = parsedOutput ? (typeof parsedOutput === 'string' ? parsedOutput : JSON.stringify(parsedOutput, null, 2)) : (sanitizedRaw && sanitizedRaw.candidates && sanitizedRaw.candidates[0] && sanitizedRaw.candidates[0].content ? (sanitizedRaw.candidates[0].content.parts ? (sanitizedRaw.candidates[0].content.parts.map(p=>p.text||'').join('\n')) : (sanitizedRaw.candidates[0].content.text||'') ) : null);
+        result.chat = { messages: [ { role: 'assistant', content: { type: 'structured', structured: parsedOutput || null, text: prettyText } } ] };
+      } catch (e) { /* ignore chat wrapper errors */ }
       await cleanupSavedFiles();
       return res.json(result);
     }
@@ -730,6 +736,11 @@ app.post('/submit', upload.any(), async (req, res) => {
         total: Number.isFinite(total2) ? total2 : null
       }
     };
+    // Build ChatGPT-like message wrapper for frontend compatibility
+    try {
+      const prettyText2 = parsedOutput ? (typeof parsedOutput === 'string' ? parsedOutput : JSON.stringify(parsedOutput, null, 2)) : (sanitizedRaw && sanitizedRaw.candidates && sanitizedRaw.candidates[0] && sanitizedRaw.candidates[0].content ? (sanitizedRaw.candidates[0].content.parts ? (sanitizedRaw.candidates[0].content.parts.map(p=>p.text||'').join('\n')) : (sanitizedRaw.candidates[0].content.text||'') ) : null);
+      result2.chat = { messages: [ { role: 'assistant', content: { type: 'structured', structured: parsedOutput || null, text: prettyText2 } } ] };
+    } catch (e) { /* ignore */ }
     await cleanupSavedFiles();
     return res.json(result2);
   } catch (err) {
@@ -756,6 +767,17 @@ app.get('/models', (_req, res) => {
     out[product] = entries;
   });
   res.json(out);
+});
+
+// Debug: list Gemini models available to the configured API key
+app.get('/gemini/models', async (_req, res) => {
+  try {
+    const google = require('./providers/google');
+    const data = await google.listModels();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'gemini_list_failed', message: e && e.message });
+  }
 });
 
 app.listen(PORT, () => console.log(`AI model test server running on http://localhost:${PORT}`));
