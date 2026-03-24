@@ -16,7 +16,7 @@ window.app = (function(){
   // automation controls
   let automationActive = true; // allow automatic repeats by default
   let submissionCount = 0; // counts completed submissions (increment when result appended)
-  const maxSubmissions = 40; // inclusive of initial one
+  const maxSubmissions = 30; // inclusive of initial one
   let _autoScheduleId = null; // scheduled next submit
   let _inFlight = false; // track if submit is currently running
   let _countdownId = null;
