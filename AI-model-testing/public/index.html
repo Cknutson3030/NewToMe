@@ -33,21 +33,30 @@
     </div>
 
     <button id="submit" onclick="app.submit()" style="margin-top:12px">Submit</button>
+    <button id="clean" onclick="app.clean()" style="margin-top:12px;margin-left:8px">Clean</button>
+    <button id="stop" onclick="app.stop()" style="margin-top:12px;margin-left:8px;background:#c00;color:#fff">Stop</button>
+    <span id="finishBadge" style="display:none;margin-left:8px;color:green;font-weight:bold">Finish</span>
+    <div id="processing" style="margin-top:8px">Processing: <span id="processingTimer">idle</span></div>
+    <div id="autoWait" style="margin-top:6px;display:none">Next auto-submit in: <span id="countdown">--</span></div>
 
-    <h3>Result</h3>
-    <div><strong>Product/Model:</strong> <span id="meta"></span></div>
-    <div><strong>Processing time (ms):</strong> <span id="time"></span></div>
-    <!-- AI Response panel removed per request; results shown in History table -->
+    <!-- Result summary removed; history table shows structured outputs -->
 
     <h3>History</h3>
     <table id="resultsTable" border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse">
       <thead>
         <tr>
+          <th style="width:60px">No.</th>
           <th style="width:160px">Time</th>
           <th>AI Product</th>
           <th>Model</th>
-          <th>Response</th>
-          <th style="width:120px">Processing ms</th>
+          <th>raw_material_extraction (kg CO₂e)</th>
+          <th>manufacturing (kg CO₂e)</th>
+          <th>transportation_distribution (kg CO₂e)</th>
+          <th>use_phase (kg CO₂e)</th>
+          <th>end_of_life (kg CO₂e)</th>
+          <th>total (kg CO₂e)</th>
+          <th style="width:120px">Tokens</th>
+          <th style="width:120px">processing_ms</th>
         </tr>
       </thead>
       <tbody id="resultsBody"></tbody>

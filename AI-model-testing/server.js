@@ -25,7 +25,7 @@ const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 //  - To add a new model option: add a new key here and add the same key to the frontend `products` list in public/app.js.
 const PROVIDER_MAP = {
   ChatGPT: {
-    'gpt-5.4': { provider: 'openai', model: 'gpt-5.4' },
+    'gpt-5-nano': { provider: 'openai', model: 'gpt-5-nano' },
     'gpt-5.2': { provider: 'openai', model: 'gpt-5.2' },
     'gpt-5.1': { provider: 'openai', model: 'gpt-5.1' }
   },
@@ -82,50 +82,125 @@ app.post('/submit', upload.any(), async (req, res) => {
       }
     };
 
-    // JSON Schema for structured output (kept consistent across experiments)
+    // Structured Outputs JSON Schema for lifecycle assessment (copied from user's Python prompt schema)
     const schemaObj = {
-      name: 'image_analysis',
+      name: 'structured_information_response',
       strict: true,
       schema: {
         type: 'object',
         additionalProperties: false,
         properties: {
-          description: { type: 'string' },
-          objects: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                label: { type: 'string' },
-                confidence: { type: 'number' },
-                bbox: {
-                  type: 'object',
-                  additionalProperties: false,
-                  properties: {
-                    x: { type: 'number' },
-                    y: { type: 'number' },
-                    width: { type: 'number' },
-                    height: { type: 'number' }
-                  },
-                  required: ['x', 'y', 'width', 'height']
-                }
+          functional_unit: { type: 'string' },
+          life_cycle_emissions: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              raw_material_extraction: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  kg_co2e: { type: 'number' },
+                  assumptions: { type: 'string' },
+                  coefficent: { type: 'string' }
+                },
+                required: ['kg_co2e', 'assumptions', 'coefficent']
               },
-              required: ['label', 'confidence', 'bbox']
-            }
-          },
-          dominant_colors: { type: 'array', items: { type: 'string' } },
-          detected_text: { type: 'string' },
-          adult_content: { type: 'boolean' }
+              manufacturing: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  kg_co2e: { type: 'number' },
+                  assumptions: { type: 'string' },
+                  coefficent: { type: 'string' }
+                },
+                required: ['kg_co2e', 'assumptions', 'coefficent']
+              },
+              transportation_distribution: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  kg_co2e: { type: 'number' },
+                  assumptions: { type: 'string' },
+                  coefficent: { type: 'string' }
+                },
+                required: ['kg_co2e', 'assumptions', 'coefficent']
+              },
+              use_phase: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  kg_co2e: { type: 'number' },
+                  assumptions: { type: 'string' },
+                  coefficent: { type: 'string' }
+                },
+                required: ['kg_co2e', 'assumptions', 'coefficent']
+              },
+              end_of_life: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  kg_co2e: { type: 'number' },
+                  assumptions: { type: 'string' },
+                  coefficent: { type: 'string' }
+                },
+                required: ['kg_co2e', 'assumptions', 'coefficent']
+              }
+            },
+            required: ['raw_material_extraction','manufacturing','transportation_distribution','use_phase','end_of_life']
+          }
         },
-        required: ['description', 'objects', 'dominant_colors', 'detected_text', 'adult_content']
+        required: ['functional_unit','life_cycle_emissions']
       }
     };
 
     // Shared prompt template used for all providers and experiments.
     // Keep the template here so every experiment uses the exact same instruction text.
     // Use `{product}` and `{model}` placeholders which will be replaced at runtime.
-    const PROMPT_TEMPLATE = `Product: {product}; Model: {model}. Analyze the images and return only JSON matching schema 'image_analysis'.`;
+     const PROMPT_TEMPLATE = `
+  You are a sustainability and life-cycle assessment expert following ISO 14067 principles:
+  - Life-cycle perspective
+  - Transparency
+  - No misleading precision
+  - Consistent system boundaries
+  (Carbon Footprint of Products).
+
+  DATA SOURCES ONLY FROM HERE:
+  https://www.climatiq.io/data/source/openio_canada
+  https://ghgprotocol.org/Third-Party-Databases/Canadian-Raw-Materials-Database
+  https://www.canada.ca/en/environment-climate-change/services/managing-pollution/fuel-life-cycle-assessment-model.html
+  https://www.canada.ca/en/environment-climate-change/services/climate-change/pricing-pollution-how-it-will-work/output-based-pricing-system/federal-greenhouse-gas-offset-system/emission-factors-reference-values.html
+  https://uwaterloo.ca/canadian-raw-materials-database/life-cycle-inventory-databasesbases-donnees-linventaire
+  https://publications.gc.ca/site/eng/9.955129/publication.html
+  https://eeecc.nrc-cnrc.gc.ca/en/life-cycle-inventory-warehouse
+  https://www.canada.ca/en/environment-climate-change/services/environmental-indicators/greenhouse-gas-emissions.html
+  https://www.ipcc-nggip.iges.or.jp/public/2006gl/index.html
+  https://www.canada.ca/en/treasury-board-secretariat/services/innovation/greening-government/government-canada-greenhouse-gas-emissions-inventory.html
+  https://publications.gc.ca/collections/collection_2022/eccc/En14-493-1-2022-eng.pdf
+  https://www.canada.ca/en/environment-climate-change/services/managing-pollution/fuel-life-cycle-assessment-model/methodology.html
+
+  Analyze the provided images and perform the following tasks:
+
+  1. Assume a functional unit of:
+    "One unit of the identified product, suitable for its intended use."
+
+  2. Using reasonable, transparent assumptions and publicly accepted
+  life-cycle emission factors (e.g. industry averages, IPCC-aligned values),
+  estimate greenhouse gas emissions (kg CO₂e) for EACH of the following
+  life-cycle stages:
+
+    a. Raw material extraction  
+    b. Manufacturing / processing  
+    c. Transportation & distribution  
+    d. Use phase (if applicable; otherwise explain why excluded)  
+    e. End-of-life
+
+  3. Output the results in a structured JSON object conforming to the provided schema.
+
+  4. For each stage, include:
+    - Estimated emissions (kg CO₂e)
+    - Key assumptions
+    - Coefficient: SHOW THE NUMBER YOU FOUND FROM DATA SOURCES
+  `;
 
     // Resolve provider and model mapping based on frontend selections
     const mapping = (PROVIDER_MAP[product] || {})[model];
@@ -173,30 +248,124 @@ app.post('/submit', upload.any(), async (req, res) => {
       });
       const body = await response.json();
       const duration = Date.now() - startTime;
-      // try to extract a parsed structured output when available
-      let parsedOutput = null;
-      try {
-        if (body.output_parsed) {
-          parsedOutput = body.output_parsed;
-        } else if (Array.isArray(body.output)) {
-          for (const item of body.output) {
-            if (item.type === 'message' && Array.isArray(item.content)) {
-              for (const c of item.content) {
-                if (c.type === 'output_text' && typeof c.text === 'string') {
-                  try { parsedOutput = JSON.parse(c.text); break; } catch (e) { /* not JSON */ }
+        // try to extract a parsed structured output when available (robust)
+        const parseStructuredOutput = (resp) => {
+          try {
+            if (!resp) return null;
+            if (resp.output_parsed) return resp.output_parsed;
+            if (Array.isArray(resp.output)) {
+              for (const item of resp.output) {
+                if (item && item.type === 'message' && Array.isArray(item.content)) {
+                  for (const c of item.content) {
+                    // structured_output may contain the parsed JSON in `value` or similar
+                    if (c && c.type === 'structured_output') {
+                      if (c.value) return c.value;
+                      return c;
+                    }
+                    if (c && c.type === 'output_text' && typeof c.text === 'string') {
+                      // try direct parse
+                      try { return JSON.parse(c.text); } catch (e) {}
+                      // fallback: extract first {...} block and try parse
+                      const first = c.text.indexOf('{');
+                      const last = c.text.lastIndexOf('}');
+                      if (first !== -1 && last !== -1 && last > first) {
+                        const sub = c.text.slice(first, last + 1);
+                        try { return JSON.parse(sub); } catch (e) {}
+                      }
+                    }
+                  }
                 }
-                if (c.type === 'structured_output') { parsedOutput = c; break; }
               }
             }
-            if (parsedOutput) break;
+          } catch (e) { console.warn('parseStructuredOutput error', e && e.message); }
+          return null;
+        };
+        let parsedOutput = parseStructuredOutput(body);
+        // unwrap single-key wrapper objects (e.g., { structured_information_response: { ... } })
+        try {
+          if (parsedOutput && typeof parsedOutput === 'object' && !Array.isArray(parsedOutput)) {
+            const keys = Object.keys(parsedOutput);
+            if (keys.length === 1) {
+              const inner = parsedOutput[keys[0]];
+              if (inner && typeof inner === 'object' && inner.life_cycle_emissions) parsedOutput = inner;
+            }
           }
-        }
-      } catch (e) {
-        console.warn('parse structured output failed', e && e.message);
-      }
+        } catch(e) { /* ignore */ }
 
+      // build lifecycle summary fields from parsed output when available
+      const normalizeStageValue = (val) => {
+        if (val == null) return null;
+        // If it's already a number, return it
+        if (typeof val === 'number' && Number.isFinite(val)) return val;
+        // If it's an object with kg_co2e field
+        if (typeof val === 'object') {
+          const candidates = ['kg_co2e', 'kg_co2e_value', 'value', 'amount'];
+          for (const k of candidates) {
+            if (k in val) {
+              const v = val[k];
+              if (typeof v === 'number' && Number.isFinite(v)) return v;
+              if (typeof v === 'string') {
+                const m = v.match(/([-+]?[0-9]*\.?[0-9]+)/);
+                if (m) return Number(m[0]);
+              }
+            }
+          }
+          // try top-level numeric-like string on object
+          try {
+            const s = JSON.stringify(val);
+            const m = s.match(/([-+]?[0-9]*\.?[0-9]+)/);
+            if (m) return Number(m[0]);
+          } catch (e) {}
+          return null;
+        }
+        // If it's a string, try extract number
+        if (typeof val === 'string') {
+          const m = val.match(/([-+]?[0-9]*\.?[0-9]+)/);
+          if (m) return Number(m[0]);
+          return null;
+        }
+        return null;
+      };
+
+      const lc = parsedOutput && parsedOutput.life_cycle_emissions ? parsedOutput.life_cycle_emissions : parsedOutput || {};
+      // Support several possible shapes: nested objects with .kg_co2e, direct numbers, or strings
+      const rm_raw = lc?.raw_material_extraction ?? parsedOutput?.raw_material_extraction ?? parsedOutput?.raw_material ?? null;
+      const manu_raw = lc?.manufacturing ?? parsedOutput?.manufacturing ?? parsedOutput?.manufacturing_process ?? null;
+      const trans_raw = lc?.transportation_distribution ?? parsedOutput?.transportation_distribution ?? parsedOutput?.transportation ?? null;
+      const usep_raw = lc?.use_phase ?? parsedOutput?.use_phase ?? parsedOutput?.use ?? null;
+      const eol_raw = lc?.end_of_life ?? parsedOutput?.end_of_life ?? parsedOutput?.end_of_life_stage ?? null;
+
+      const rm = normalizeStageValue(rm_raw);
+      const manu = normalizeStageValue(manu_raw);
+      const trans = normalizeStageValue(trans_raw);
+      const usep = normalizeStageValue(usep_raw);
+      const eol = normalizeStageValue(eol_raw);
+
+      const total = [rm, manu, trans, usep, eol].reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
+      const result = {
+        time: new Date().toISOString(),
+        product,
+        model: model,
+        raw_material_extraction: rm,
+        manufacturing: manu,
+        transportation_distribution: trans,
+        use_phase: usep,
+        end_of_life: eol,
+        total: Number.isFinite(total) ? total : null,
+        processing_time_ms: duration,
+        ai_response: body,
+        ai_parsed: parsedOutput,
+        ai_parsed_normalized: {
+          raw_material_extraction: rm,
+          manufacturing: manu,
+          transportation_distribution: trans,
+          use_phase: usep,
+          end_of_life: eol,
+          total: Number.isFinite(total) ? total : null
+        }
+      };
       await cleanupSavedFiles();
-      return res.json({ product, model, urls: savedUrls, duration_ms: duration, ai_response: body, ai_parsed: parsedOutput });
+      return res.json(result);
     }
 
     // Non-OpenAI providers are not implemented in this harness yet
@@ -230,28 +399,112 @@ app.post('/submit', upload.any(), async (req, res) => {
     });
     const body = await response.json();
     const duration = Date.now() - startTime;
-    // attempt to extract parsed structured output
-    let parsedOutput = null;
-    try {
-      if (body.output_parsed) {
-        parsedOutput = body.output_parsed;
-      } else if (Array.isArray(body.output)) {
-        for (const item of body.output) {
-          if (item.type === 'message' && Array.isArray(item.content)) {
-            for (const c of item.content) {
-              if (c.type === 'output_text' && typeof c.text === 'string') {
-                try { parsedOutput = JSON.parse(c.text); break; } catch (e) { /* not JSON */ }
+    // attempt to extract parsed structured output (robust helper)
+    const parseStructuredOutput = (resp) => {
+      try {
+        if (!resp) return null;
+        if (resp.output_parsed) return resp.output_parsed;
+        if (Array.isArray(resp.output)) {
+          for (const item of resp.output) {
+            if (item && item.type === 'message' && Array.isArray(item.content)) {
+              for (const c of item.content) {
+                if (c && c.type === 'structured_output') {
+                  if (c.value) return c.value;
+                  return c;
+                }
+                if (c && c.type === 'output_text' && typeof c.text === 'string') {
+                  try { return JSON.parse(c.text); } catch (e) {}
+                  const first = c.text.indexOf('{');
+                  const last = c.text.lastIndexOf('}');
+                  if (first !== -1 && last !== -1 && last > first) {
+                    const sub = c.text.slice(first, last + 1);
+                    try { return JSON.parse(sub); } catch (e) {}
+                  }
+                }
               }
-              if (c.type === 'structured_output') { parsedOutput = c; break; }
             }
           }
-          if (parsedOutput) break;
+        }
+      } catch (e) { console.warn('parseStructuredOutput error', e && e.message); }
+      return null;
+    };
+    let parsedOutput = parseStructuredOutput(body);
+    try {
+      if (parsedOutput && typeof parsedOutput === 'object' && !Array.isArray(parsedOutput)) {
+        const keys = Object.keys(parsedOutput);
+        if (keys.length === 1) {
+          const inner = parsedOutput[keys[0]];
+          if (inner && typeof inner === 'object' && inner.life_cycle_emissions) parsedOutput = inner;
         }
       }
-    } catch (e) { console.warn('parse structured output failed', e && e.message); }
+    } catch(e) { /* ignore */ }
 
+    // build lifecycle summary fields from parsed output when available
+    // Normalize values (same logic as above branch)
+    const normalizeStageValue = (val) => {
+      if (val == null) return null;
+      if (typeof val === 'number' && Number.isFinite(val)) return val;
+      if (typeof val === 'object') {
+        const candidates = ['kg_co2e', 'kg_co2e_value', 'value', 'amount'];
+        for (const k of candidates) {
+          if (k in val) {
+            const v = val[k];
+            if (typeof v === 'number' && Number.isFinite(v)) return v;
+            if (typeof v === 'string') {
+              const m = v.match(/([-+]?[0-9]*\.?[0-9]+)/);
+              if (m) return Number(m[0]);
+            }
+          }
+        }
+        try { const s = JSON.stringify(val); const m = s.match(/([-+]?[0-9]*\.?[0-9]+)/); if (m) return Number(m[0]); } catch (e) {}
+        return null;
+      }
+      if (typeof val === 'string') {
+        const m = val.match(/([-+]?[0-9]*\.?[0-9]+)/);
+        if (m) return Number(m[0]);
+        return null;
+      }
+      return null;
+    };
+
+    const lc2 = parsedOutput && parsedOutput.life_cycle_emissions ? parsedOutput.life_cycle_emissions : parsedOutput || {};
+    const rm2_raw = lc2?.raw_material_extraction ?? parsedOutput?.raw_material_extraction ?? parsedOutput?.raw_material ?? null;
+    const manu2_raw = lc2?.manufacturing ?? parsedOutput?.manufacturing ?? parsedOutput?.manufacturing_process ?? null;
+    const trans2_raw = lc2?.transportation_distribution ?? parsedOutput?.transportation_distribution ?? parsedOutput?.transportation ?? null;
+    const usep2_raw = lc2?.use_phase ?? parsedOutput?.use_phase ?? parsedOutput?.use ?? null;
+    const eol2_raw = lc2?.end_of_life ?? parsedOutput?.end_of_life ?? parsedOutput?.end_of_life_stage ?? null;
+
+    const rm2 = normalizeStageValue(rm2_raw);
+    const manu2 = normalizeStageValue(manu2_raw);
+    const trans2 = normalizeStageValue(trans2_raw);
+    const usep2 = normalizeStageValue(usep2_raw);
+    const eol2 = normalizeStageValue(eol2_raw);
+
+    const total2 = [rm2, manu2, trans2, usep2, eol2].reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
+    const result2 = {
+      time: new Date().toISOString(),
+      product,
+      model: mapping.model,
+      raw_material_extraction: rm2,
+      manufacturing: manu2,
+      transportation_distribution: trans2,
+      use_phase: usep2,
+      end_of_life: eol2,
+      total: Number.isFinite(total2) ? total2 : null,
+      processing_time_ms: duration,
+      ai_response: body,
+      ai_parsed: parsedOutput,
+      ai_parsed_normalized: {
+        raw_material_extraction: rm2,
+        manufacturing: manu2,
+        transportation_distribution: trans2,
+        use_phase: usep2,
+        end_of_life: eol2,
+        total: Number.isFinite(total2) ? total2 : null
+      }
+    };
     await cleanupSavedFiles();
-    return res.json({ product, model: mapping.model, urls: savedUrls, duration_ms: duration, ai_response: body, ai_parsed: parsedOutput });
+    return res.json(result2);
   } catch (err) {
     console.error(err);
     try { await cleanupSavedFiles(); } catch (e) { /* ignore cleanup errors */ }
