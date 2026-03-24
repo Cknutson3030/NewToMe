@@ -18,16 +18,109 @@ app.use('/uploads', express.static(uploadsDir));
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Helper: fetch with timeout and retries to handle transient network errors (socket hang up)
+const fetchWithRetry = async (url, opts = {}) => {
+  const maxRetries = 3;
+  const baseDelay = 800; // ms
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timeoutMs = opts.timeoutMs || 60000; // default 60s
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const merged = Object.assign({}, opts, { signal: controller.signal });
+      const resp = await fetch(url, merged);
+      clearTimeout(timeout);
+      return resp;
+    } catch (err) {
+      clearTimeout(timeout);
+      // If aborted due to timeout or a transient network error, retry with backoff
+      const isLast = attempt + 1 >= maxRetries;
+      const shouldRetry = err && (err.type === 'system' || err.name === 'AbortError' || err.code === 'ECONNRESET');
+      console.warn(`fetchWithRetry attempt ${attempt + 1} failed`, err && (err.message || err.code));
+      if (!shouldRetry || isLast) throw err;
+      // backoff
+      await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt)));
+    }
+  }
+};
+
+// Default generation parameters (configurable via env)
+// Do not set a server-side default for max output tokens; allow the API to choose unless explicitly configured.
+const DEFAULT_TEMPERATURE = process.env.TEMPERATURE ? Number(process.env.TEMPERATURE) : 0;
+const DEFAULT_REASONING_EFFORT = (process.env.REASONING_EFFORT || 'low').toLowerCase();
+// API supports verbosity: 'low' | 'medium' | 'high'. Default to 'low' to minimize tokens.
+const DEFAULT_TEXT_VERBOSITY = (process.env.TEXT_VERBOSITY || 'low').toLowerCase();
+// Validate and normalize generation parameter values to allowed lists
+const normalizeReasoningEffort = (v) => {
+  // Normalize to the provider-supported set: 'none', 'low', 'medium', 'high'
+  if (!v || typeof v !== 'string') return 'low';
+  const allowed = ['none','low','medium','high'];
+  const s = v.toLowerCase();
+  if (allowed.includes(s)) return s;
+  // Map common synonyms/aliases
+  if (s === 'minimal' || s === 'min' || s === 'minimal_effort') return 'low';
+  if (s === 'none' || s === 'off' || s === 'zero') return 'none';
+  if (s.startsWith('low')) return 'low';
+  if (s.startsWith('med')) return 'medium';
+  if (s.startsWith('high')) return 'high';
+  return 'low';
+};
+const normalizeVerbosity = (v) => {
+  if (!v || typeof v !== 'string') return 'low';
+  const allowed = ['low','medium','high'];
+  const s = v.toLowerCase();
+  if (allowed.includes(s)) return s;
+  return 'low';
+};
+const EFFECTIVE_REASONING_EFFORT = normalizeReasoningEffort(DEFAULT_REASONING_EFFORT);
+const EFFECTIVE_TEXT_VERBOSITY = normalizeVerbosity(DEFAULT_TEXT_VERBOSITY);
+const SLIM_RESPONSE = process.env.SLIM_RESPONSE === '1' || false;
+
+// Models that do NOT accept `reasoning` parameter in the Responses API payload
+const MODELS_WITHOUT_REASONING = ['gpt-4o','gpt-4o-mini'];
+const modelSupportsReasoning = (modelId) => {
+  if (!modelId || typeof modelId !== 'string') return false;
+  for (const p of MODELS_WITHOUT_REASONING) if (modelId.startsWith(p)) return false;
+  return true;
+};
+
+// Model-specific allowed verbosity mapping. If a model supports only a subset,
+// map the requested verbosity to the nearest supported one.
+const MODEL_VERBOSITY_OVERRIDES = {
+  // gpt-4o family only supports 'medium'
+  'gpt-4o': 'medium',
+  'gpt-4o-mini': 'medium'
+};
+const getVerbosityForModel = (modelId) => {
+  if (!modelId || typeof modelId !== 'string') return EFFECTIVE_TEXT_VERBOSITY;
+  for (const prefix of Object.keys(MODEL_VERBOSITY_OVERRIDES)) {
+    if (modelId.startsWith(prefix)) return MODEL_VERBOSITY_OVERRIDES[prefix];
+  }
+  return EFFECTIVE_TEXT_VERBOSITY;
+};
+
+// Startup debug info
+console.log('Effective generation settings:', {
+  REASONING_EFFORT: EFFECTIVE_REASONING_EFFORT,
+  TEXT_VERBOSITY: EFFECTIVE_TEXT_VERBOSITY,
+  SLIM_RESPONSE
+});
+
 // Map frontend product/model strings to provider + real model identifier
 // NOTE: To test a different model in future experiments, edit the mapped `model` values below.
 // Examples:
 //  - To swap ChatGPT model for experiment: change the right-hand `model` for 'gpt-image-1' to another model id.
 //  - To add a new model option: add a new key here and add the same key to the frontend `products` list in public/app.js.
 const PROVIDER_MAP = {
+  // gpt-4o and gpt-4o-mini are known for image analyze, GPT-5-mini (reasoning-focused) for tests reasoning vs vision tradeoff.
+  // References: 
+  // https://www.mdpi.com/2076-3417/14/17/7782
+  // https://arxiv.org/abs/2507.01955
+  // https://aimlapi.com/comparisons/llama-3-2-90b-vision-vs-gpt-4o-vision
   ChatGPT: {
-    'gpt-5-nano': { provider: 'openai', model: 'gpt-5-nano' },
-    'gpt-5.2': { provider: 'openai', model: 'gpt-5.2' },
-    'gpt-5.1': { provider: 'openai', model: 'gpt-5.1' }
+    'gpt-4o': { provider: 'openai', model: 'gpt-4o' },
+    'gpt-4o-mini': { provider: 'openai', model: 'gpt-4o-mini' },
+    'gpt-5-mini': { provider: 'openai', model: 'gpt-5-mini' }
   },
   Gemini: {
     'gemini-image-1': { provider: 'google', model: 'gemini.vision.v1' },
@@ -100,50 +193,40 @@ app.post('/submit', upload.any(), async (req, res) => {
                 additionalProperties: false,
                 properties: {
                   kg_co2e: { type: 'number' },
-                  assumptions: { type: 'string' },
-                  coefficent: { type: 'string' }
                 },
-                required: ['kg_co2e', 'assumptions', 'coefficent']
+                required: ['kg_co2e']
               },
               manufacturing: {
                 type: 'object',
                 additionalProperties: false,
                 properties: {
                   kg_co2e: { type: 'number' },
-                  assumptions: { type: 'string' },
-                  coefficent: { type: 'string' }
                 },
-                required: ['kg_co2e', 'assumptions', 'coefficent']
+                required: ['kg_co2e']
               },
               transportation_distribution: {
                 type: 'object',
                 additionalProperties: false,
                 properties: {
                   kg_co2e: { type: 'number' },
-                  assumptions: { type: 'string' },
-                  coefficent: { type: 'string' }
                 },
-                required: ['kg_co2e', 'assumptions', 'coefficent']
+                required: ['kg_co2e']
               },
               use_phase: {
                 type: 'object',
                 additionalProperties: false,
                 properties: {
                   kg_co2e: { type: 'number' },
-                  assumptions: { type: 'string' },
-                  coefficent: { type: 'string' }
                 },
-                required: ['kg_co2e', 'assumptions', 'coefficent']
+                required: ['kg_co2e']
               },
               end_of_life: {
                 type: 'object',
                 additionalProperties: false,
                 properties: {
                   kg_co2e: { type: 'number' },
-                  assumptions: { type: 'string' },
-                  coefficent: { type: 'string' }
                 },
-                required: ['kg_co2e', 'assumptions', 'coefficent']
+                required: ['kg_co2e']
               }
             },
             required: ['raw_material_extraction','manufacturing','transportation_distribution','use_phase','end_of_life']
@@ -191,15 +274,13 @@ app.post('/submit', upload.any(), async (req, res) => {
     a. Raw material extraction  
     b. Manufacturing / processing  
     c. Transportation & distribution  
-    d. Use phase (if applicable; otherwise explain why excluded)  
+    d. Use phase  
     e. End-of-life
 
   3. Output the results in a structured JSON object conforming to the provided schema.
 
   4. For each stage, include:
     - Estimated emissions (kg CO₂e)
-    - Key assumptions
-    - Coefficient: SHOW THE NUMBER YOU FOUND FROM DATA SOURCES
   `;
 
     // Resolve provider and model mapping based on frontend selections
@@ -224,30 +305,77 @@ app.post('/submit', upload.any(), async (req, res) => {
     if (!mapping) {
       if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
       const startTime = Date.now();
-      const response = await fetch('https://api.openai.com/v1/responses', {
+      // build payload and omit `reasoning` for models that don't support it
+      const payloadObj = {
+        model: model || 'MODEL_NAME',
+        input: requestItems,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: schemaObj.name || 'image_analysis',
+            strict: !!schemaObj.strict,
+            schema: schemaObj.schema
+          },
+          verbosity: getVerbosityForModel(model || 'MODEL_NAME')
+        }
+      };
+      if (modelSupportsReasoning(payloadObj.model)) payloadObj.reasoning = { effort: EFFECTIVE_REASONING_EFFORT };
+      const response = await fetchWithRetry('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
           'Content-Type': 'application/json'
         },
-        // Use the newer Responses API parameter location for structured output.
-        // Older clients used `response_format`; newer API moves this under `text.format`.
-        body: JSON.stringify({
-          model: model || 'MODEL_NAME',
-          input: requestItems,
-          // primary: the new parameter location for Structured Outputs
-          text: {
-            format: {
-              type: 'json_schema',
-              name: schemaObj.name || 'image_analysis',
-              strict: !!schemaObj.strict,
-              schema: schemaObj.schema
-            }
-          }
-        })
+        body: JSON.stringify(payloadObj),
+        timeoutMs: 120000
       });
       const body = await response.json();
-      const duration = Date.now() - startTime;
+      // Log token usage for tuning
+      try { console.log('response usage', body.usage || (body.ai_response && body.ai_response.usage) || null); } catch(e){}
+      // If the response indicates it was cut off by max_output_tokens, retry once with a larger cap
+      let ai_response_slim = null;
+      let duration = Date.now() - startTime;
+      try {
+        ai_response_slim = (()=>{ try{ const r = body; return { id: r.id, model: r.model, status: r.status, usage: r.usage || (r.ai_response && r.ai_response.usage) || null }; }catch(e){return null;} })();
+      } catch(e){}
+      const needsRetry = (body && (body.incomplete_details && body.incomplete_details.reason === 'max_output_tokens')) || (body && body.status === 'incomplete' && body.incomplete_details && body.incomplete_details.reason === 'max_output_tokens');
+      if (needsRetry) {
+        try {
+          console.log('retrying response without max_output_tokens (let API default)');
+          const retryStart = Date.now();
+          const retryPayload = {
+            model: model || 'MODEL_NAME',
+            input: requestItems,
+            text: {
+              format: {
+                type: 'json_schema',
+                name: schemaObj.name || 'image_analysis',
+                strict: !!schemaObj.strict,
+                schema: schemaObj.schema
+              },
+              verbosity: getVerbosityForModel(model || 'MODEL_NAME')
+            }
+          };
+          if (modelSupportsReasoning(retryPayload.model)) retryPayload.reasoning = { effort: EFFECTIVE_REASONING_EFFORT };
+          const retryResp = await fetchWithRetry('https://api.openai.com/v1/responses', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(retryPayload),
+            timeoutMs: 120000
+          });
+          const retryBody = await retryResp.json();
+          duration += (Date.now() - retryStart);
+          console.log('retry response usage', retryBody.usage || (retryBody.ai_response && retryBody.ai_response.usage) || null);
+          // prefer the retry body if it looks usable
+          if (retryBody && (retryBody.status === 'completed' || !(retryBody.incomplete_details && retryBody.incomplete_details.reason === 'max_output_tokens'))) {
+            Object.assign(body, retryBody);
+            ai_response_slim = (()=>{ try{ const r = retryBody; return { id: r.id, model: r.model, status: r.status, usage: r.usage || (r.ai_response && r.ai_response.usage) || null }; }catch(e){return null;} })();
+          }
+        } catch (e) { console.warn('retry failed', e && e.message); }
+      }
         // try to extract a parsed structured output when available (robust)
         const parseStructuredOutput = (resp) => {
           try {
@@ -281,6 +409,63 @@ app.post('/submit', upload.any(), async (req, res) => {
           return null;
         };
         let parsedOutput = parseStructuredOutput(body);
+        const removeKeysDeep = (obj) => {
+          if (!obj || typeof obj !== 'object') return;
+          if (Array.isArray(obj)) return obj.forEach(removeKeysDeep);
+          for (const k of Object.keys(obj)) {
+            if (KEYS_TO_REMOVE.includes(k)) {
+              delete obj[k];
+              continue;
+            }
+            removeKeysDeep(obj[k]);
+          }
+        };
+        const sanitizeParsed = (p) => {
+          if (!p || typeof p !== 'object') return p;
+          try {
+            const clone = JSON.parse(JSON.stringify(p));
+            removeKeysDeep(clone);
+            return clone;
+          } catch (e) { return p; }
+        };
+        parsedOutput = sanitizeParsed(parsedOutput);
+        // Also create a sanitized copy of the raw API body to return to the frontend
+        const sanitizeRawResponse = (raw) => {
+          if (!raw || typeof raw !== 'object') return raw;
+          let clone;
+          try { clone = JSON.parse(JSON.stringify(raw)); } catch (e) { return raw; }
+          try {
+            if (Array.isArray(clone.output)) {
+              for (const item of clone.output) {
+                if (item && Array.isArray(item.content)) {
+                  for (const c of item.content) {
+                    if (!c) continue;
+                    if (c.type === 'output_text' && typeof c.text === 'string') {
+                      try {
+                        const maybe = JSON.parse(c.text);
+                        removeKeysDeep(maybe);
+                        c.text = JSON.stringify(maybe);
+                      } catch (e) {
+                        // fallback: remove key/value patterns for the keys from the raw text
+                        let s = c.text;
+                        for (const key of KEYS_TO_REMOVE) {
+                          const re = new RegExp(`"\\s*${key}\\s*"\\s*:\\s*(?:"[^"]*"|\\{[^\\}]*\\}|\\[[^\\]]*\\]|[^,\\}\\]]*)(,)?`, 'gi');
+                          s = s.replace(re, (m, comma) => comma ? '' : '');
+                        }
+                        s = s.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/\{\s*,/g, '{').replace(/\[\s*,/g, '[');
+                        c.text = s;
+                      }
+                    } else if (c.type === 'structured_output' && c.value) {
+                      removeKeysDeep(c.value);
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) { /* ignore */ }
+          return clone;
+        };
+        const sanitizedRaw = sanitizeRawResponse(body);
         // unwrap single-key wrapper objects (e.g., { structured_information_response: { ... } })
         try {
           if (parsedOutput && typeof parsedOutput === 'object' && !Array.isArray(parsedOutput)) {
@@ -353,7 +538,8 @@ app.post('/submit', upload.any(), async (req, res) => {
         end_of_life: eol,
         total: Number.isFinite(total) ? total : null,
         processing_time_ms: duration,
-        ai_response: body,
+        ai_response: sanitizedRaw,
+        ai_response_slim,
         ai_parsed: parsedOutput,
         ai_parsed_normalized: {
           raw_material_extraction: rm,
@@ -377,28 +563,73 @@ app.post('/submit', upload.any(), async (req, res) => {
     // OpenAI provider: call Responses API with mapped model id
     if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
     const startTime = Date.now();
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const mappedPayload = {
+      model: mapping.model,
+      input: requestItems,
+      text: {
+        format: {
+          type: 'json_schema',
+          name: schemaObj.name || 'image_analysis',
+          strict: !!schemaObj.strict,
+          schema: schemaObj.schema
+        },
+        verbosity: getVerbosityForModel(mapping.model)
+      }
+    };
+    if (modelSupportsReasoning(mappedPayload.model)) mappedPayload.reasoning = { effort: EFFECTIVE_REASONING_EFFORT };
+    const response = await fetchWithRetry('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: mapping.model,
-        input: requestItems,
-        // newer API location for Structured Outputs
-        text: {
-          format: {
-            type: 'json_schema',
-            name: schemaObj.name || 'image_analysis',
-            strict: !!schemaObj.strict,
-            schema: schemaObj.schema
-          }
-        }
-      })
+      body: JSON.stringify(mappedPayload),
+      timeoutMs: 120000
     });
     const body = await response.json();
-    const duration = Date.now() - startTime;
+    // Log token usage for tuning
+    try { console.log('response usage', body.usage || (body.ai_response && body.ai_response.usage) || null); } catch(e){}
+    // Retry once with higher max_output_tokens when initial response reports truncation
+    let duration = Date.now() - startTime;
+    let ai_response_slim = null;
+    try { ai_response_slim = (()=>{ try{ const r = body; return { id: r.id, model: r.model, status: r.status, usage: r.usage || (r.ai_response && r.ai_response.usage) || null }; }catch(e){return null;} })(); } catch(e){}
+    const needsRetry = (body && (body.incomplete_details && body.incomplete_details.reason === 'max_output_tokens')) || (body && body.status === 'incomplete' && body.incomplete_details && body.incomplete_details.reason === 'max_output_tokens');
+    if (needsRetry) {
+      try {
+        console.log('retrying mapped response without max_output_tokens (let API default)');
+        const retryStart = Date.now();
+        const retryPayload = {
+          model: mapping.model,
+          input: requestItems,
+          text: {
+            format: {
+              type: 'json_schema',
+              name: schemaObj.name || 'image_analysis',
+              strict: !!schemaObj.strict,
+              schema: schemaObj.schema
+            },
+            verbosity: EFFECTIVE_TEXT_VERBOSITY
+          }
+        };
+        if (modelSupportsReasoning(retryPayload.model)) retryPayload.reasoning = { effort: EFFECTIVE_REASONING_EFFORT };
+        const retryResp = await fetchWithRetry('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(retryPayload),
+          timeoutMs: 120000
+        });
+        const retryBody = await retryResp.json();
+        duration += (Date.now() - retryStart);
+        console.log('retry response usage', retryBody.usage || (retryBody.ai_response && retryBody.ai_response.usage) || null);
+        if (retryBody && (retryBody.status === 'completed' || !(retryBody.incomplete_details && retryBody.incomplete_details.reason === 'max_output_tokens'))) {
+          Object.assign(body, retryBody);
+          ai_response_slim = (()=>{ try{ const r = retryBody; return { id: r.id, model: r.model, status: r.status, usage: r.usage || (r.ai_response && r.ai_response.usage) || null }; }catch(e){return null;} })();
+        }
+      } catch (e) { console.warn('retry failed', e && e.message); }
+    }
     // attempt to extract parsed structured output (robust helper)
     const parseStructuredOutput = (resp) => {
       try {
@@ -428,7 +659,29 @@ app.post('/submit', upload.any(), async (req, res) => {
       } catch (e) { console.warn('parseStructuredOutput error', e && e.message); }
       return null;
     };
-    let parsedOutput = parseStructuredOutput(body);
+        let parsedOutput = parseStructuredOutput(body);
+        // sanitize parsed output: remove verbose fields the frontend doesn't need
+        const KEYS_TO_REMOVE = ['assumptions','coefficent','coefficient'];
+        const removeKeysDeep = (obj) => {
+          if (!obj || typeof obj !== 'object') return;
+          if (Array.isArray(obj)) return obj.forEach(removeKeysDeep);
+          for (const k of Object.keys(obj)) {
+            if (KEYS_TO_REMOVE.includes(k)) {
+              delete obj[k];
+              continue;
+            }
+            removeKeysDeep(obj[k]);
+          }
+        };
+        const sanitizeParsed = (p) => {
+          if (!p || typeof p !== 'object') return p;
+          try {
+            const clone = JSON.parse(JSON.stringify(p));
+            removeKeysDeep(clone);
+            return clone;
+          } catch (e) { return p; }
+        };
+        parsedOutput = sanitizeParsed(parsedOutput);
     try {
       if (parsedOutput && typeof parsedOutput === 'object' && !Array.isArray(parsedOutput)) {
         const keys = Object.keys(parsedOutput);
@@ -438,6 +691,43 @@ app.post('/submit', upload.any(), async (req, res) => {
         }
       }
     } catch(e) { /* ignore */ }
+
+    // Create a sanitized copy of the raw API body (remove verbose text fields)
+    const sanitizeRawResponse = (raw) => {
+      if (!raw || typeof raw !== 'object') return raw;
+      let clone;
+      try { clone = JSON.parse(JSON.stringify(raw)); } catch (e) { return raw; }
+      try {
+        if (Array.isArray(clone.output)) {
+          for (const item of clone.output) {
+            if (item && Array.isArray(item.content)) {
+              for (const c of item.content) {
+                if (!c) continue;
+                if (c.type === 'output_text' && typeof c.text === 'string') {
+                  try {
+                    const maybe = JSON.parse(c.text);
+                    removeKeysDeep(maybe);
+                    c.text = JSON.stringify(maybe);
+                  } catch (e) {
+                    let s = c.text;
+                    for (const key of KEYS_TO_REMOVE) {
+                      const re = new RegExp(`"\\s*${key}\\s*"\\s*:\\s*(?:"[^"]*"|\\{[^\\}]*\\}|\\[[^\\]]*\\]|[^,\\}\\]]*)(,)?`, 'gi');
+                      s = s.replace(re, (m, comma) => comma ? '' : '');
+                    }
+                    s = s.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/\{\s*,/g, '{').replace(/\[\s*,/g, '[');
+                    c.text = s;
+                  }
+                } else if (c.type === 'structured_output' && c.value) {
+                  removeKeysDeep(c.value);
+                }
+              }
+            }
+          }
+        }
+      } catch (e) { /* ignore */ }
+      return clone;
+    };
+    const sanitizedRaw = sanitizeRawResponse(body);
 
     // build lifecycle summary fields from parsed output when available
     // Normalize values (same logic as above branch)
@@ -492,7 +782,8 @@ app.post('/submit', upload.any(), async (req, res) => {
       end_of_life: eol2,
       total: Number.isFinite(total2) ? total2 : null,
       processing_time_ms: duration,
-      ai_response: body,
+      ai_response: sanitizedRaw,
+      ai_response_slim,
       ai_parsed: parsedOutput,
       ai_parsed_normalized: {
         raw_material_extraction: rm2,

@@ -16,7 +16,7 @@ window.app = (function(){
   // automation controls
   let automationActive = true; // allow automatic repeats by default
   let submissionCount = 0; // counts completed submissions (increment when result appended)
-  const maxSubmissions = 30; // inclusive of initial one
+  const maxSubmissions = 20; // inclusive of initial one
   let _autoScheduleId = null; // scheduled next submit
   let _inFlight = false; // track if submit is currently running
   let _countdownId = null;
@@ -40,83 +40,94 @@ window.app = (function(){
   }
 
   // Handle files dragged into the drop area
-  function onDrop(e){
+  async function onDrop(e){
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/'));
-    addFiles(files);
+    await addFiles(files);
   }
   function onDragOver(e){ e.preventDefault(); }
-  function onFileChange(e){ const files = Array.from(e.target.files||[]).filter(f=>f.type.startsWith('image/')); addFiles(files); }
+  async function onFileChange(e){ const files = Array.from(e.target.files||[]).filter(f=>f.type.startsWith('image/')); await addFiles(files); }
+
+  // Compress/resize images before adding to the local list and render thumbnails
+  async function compressImage(file, maxDim = 800, quality = 0.7) {
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        const max = Math.max(width, height);
+        if (max > maxDim) {
+          const scale = maxDim / max;
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (!blob) return resolve(file); // fallback
+          // Create a File so FormData sees a filename and type
+          const newFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+          resolve(newFile);
+        }, 'image/jpeg', quality);
+      };
+      img.onerror = () => resolve(file);
+      img.src = URL.createObjectURL(file);
+    });
+  }
 
   // Add files to the local list and render thumbnails for quick visual verification
-  function addFiles(files){
+  async function addFiles(files){
     for(const f of files){
-      fileList.push(f);
-      const img = document.createElement('img');
-      img.src = URL.createObjectURL(f); // local blob preview
-      thumbs.appendChild(img);
+      try {
+        const compressed = await compressImage(f, 800, 0.7);
+        fileList.push(compressed);
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(compressed); // local blob preview
+        thumbs.appendChild(img);
+      } catch (e) {
+        // fallback to original file
+        fileList.push(f);
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(f);
+        thumbs.appendChild(img);
+      }
     }
   }
 
-  // Submit the selected files and the chosen product/model to the backend.
-  // The backend will resolve the mapping and call the provider; we then display results.
-  async function submit(){
-    if(!fileList.length){ alert('add images first'); return; }
-    if (_inFlight) { console.warn('submit skipped: already in-flight'); return; }
-    _inFlight = true;
-    const form = new FormData();
-    for(const f of fileList) form.append('images', f);
-    // include our product/model keys so the backend can resolve which provider/model to call
-    form.append('product', productEl.value);
-    form.append('model', modelEl.value);
-
-    const start = Date.now();
-    // start live timer
-    try { if (processingEl) { processingEl.textContent = '0.0s'; _timerStart = Date.now(); _timerId = setInterval(() => { const s = (Date.now() - _timerStart)/1000; processingEl.textContent = s.toFixed(1) + 's'; }, 150); } } catch(e){}
-    const res = await fetch('/submit', { method: 'POST', body: form });
-    const body = await res.json();
-    const duration = Date.now() - start;
-    // stop live timer
-    if (_timerId) { clearInterval(_timerId); _timerId = null; }
-    if (processingEl) processingEl.textContent = (body.processing_time_ms || body.duration_ms || duration) + ' ms';
-    // prefer parsed structured output when available
-    // prefer normalized parsed values when available
+  // helper: extract numeric stage value from server body/parsing
+  const getStageValue = (body, stage) => {
     const parsed = body.ai_parsed_normalized || body.ai_parsed || {};
-    const procMs = body.processing_time_ms || body.duration_ms || duration;
-    // helper to resolve numeric stage values from multiple possible shapes
-    const getStageValue = (stage) => {
-      // 1) prefer parsed normalized numeric values (ai_parsed_normalized)
-      if (parsed && typeof parsed[stage] === 'number') return parsed[stage];
-      // 2) top-level value from server response
-      if (body && typeof body[stage] === 'number') return body[stage];
-      // 3) ai_parsed may contain life_cycle_emissions nested object
-      try {
-        const nested = body && body.ai_parsed && body.ai_parsed.life_cycle_emissions && body.ai_parsed.life_cycle_emissions[stage];
-        if (nested != null) {
-          if (typeof nested === 'number') return nested;
-          if (typeof nested === 'object') {
-            if (typeof nested.kg_co2e === 'number') return nested.kg_co2e;
-            // try to parse numeric string inside object
-            for (const k of ['kg_co2e','value','amount']) {
-              if (k in nested && typeof nested[k] === 'number') return nested[k];
-              if (k in nested && typeof nested[k] === 'string') {
-                const m = nested[k].match(/([-+]?[0-9]*\.?[0-9]+)/);
-                if (m) return Number(m[0]);
-              }
+    if (parsed && typeof parsed[stage] === 'number') return parsed[stage];
+    if (body && typeof body[stage] === 'number') return body[stage];
+    try {
+      const nested = body && body.ai_parsed && body.ai_parsed.life_cycle_emissions && body.ai_parsed.life_cycle_emissions[stage];
+      if (nested != null) {
+        if (typeof nested === 'number') return nested;
+        if (typeof nested === 'object') {
+          if (typeof nested.kg_co2e === 'number') return nested.kg_co2e;
+          for (const k of ['kg_co2e','value','amount']) {
+            if (k in nested && typeof nested[k] === 'number') return nested[k];
+            if (k in nested && typeof nested[k] === 'string') {
+              const m = nested[k].match(/([-+]?[0-9]*\.?[0-9]+)/);
+              if (m) return Number(m[0]);
             }
           }
-          if (typeof nested === 'string') {
-            const m = nested.match(/([-+]?[0-9]*\.?[0-9]+)/);
-            if (m) return Number(m[0]);
-          }
         }
-      } catch (e) { /* ignore */ }
-      return null;
-    };
+        if (typeof nested === 'string') {
+          const m = nested.match(/([-+]?[0-9]*\.?[0-9]+)/);
+          if (m) return Number(m[0]);
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  };
 
+  // Append a result row to the history table
+  const appendResult = (body, duration) => {
     try {
       const tr = document.createElement('tr');
-      // row number (1-based, increments per transaction)
       const rowNum = resultsBody.childElementCount + 1;
       const numTd = document.createElement('td'); numTd.textContent = rowNum.toString(); tr.appendChild(numTd);
       const timeTd = document.createElement('td'); timeTd.textContent = (body.time ? new Date(body.time).toLocaleString() : new Date().toLocaleString()); tr.appendChild(timeTd);
@@ -126,23 +137,54 @@ window.app = (function(){
       const fields = ['raw_material_extraction','manufacturing','transportation_distribution','use_phase','end_of_life'];
       for (const f of fields) {
         const td = document.createElement('td'); td.style.whiteSpace = 'pre-wrap';
-        const v = getStageValue(f);
+        const v = getStageValue(body, f);
         td.textContent = (v == null ? '' : (typeof v === 'number' ? v : String(v)));
         tr.appendChild(td);
       }
 
+      const parsed = body.ai_parsed_normalized || body.ai_parsed || {};
       const totalVal = (body && typeof body.total === 'number') ? body.total : (parsed && typeof parsed.total === 'number' ? parsed.total : null);
       const totalTd = document.createElement('td'); totalTd.style.textAlign = 'right'; totalTd.textContent = (totalVal == null ? '' : totalVal.toString()); tr.appendChild(totalTd);
 
-      // tokens: look for ai_response.usage.total_tokens
       let tokensVal = null;
-      try { tokensVal = (body && body.ai_response && body.ai_response.usage && (body.ai_response.usage.total_tokens ?? body.ai_response.usage.total_tokens)) ?? null; } catch (e) { tokensVal = null; }
+      try { tokensVal = (body && body.ai_response && body.ai_response.usage && (body.ai_response.usage.total_tokens ?? body.ai_response.usage.total_tokens)) ?? (body && body.ai_response_slim && body.ai_response_slim.usage && body.ai_response_slim.usage.total_tokens) ?? null; } catch (e) { tokensVal = null; }
       const tokenTd = document.createElement('td'); tokenTd.style.textAlign = 'right'; tokenTd.textContent = (tokensVal == null ? '' : String(tokensVal)); tr.appendChild(tokenTd);
 
-      const durTd = document.createElement('td'); durTd.style.textAlign = 'right'; durTd.textContent = procMs.toString(); tr.appendChild(durTd);
+      const durTd = document.createElement('td'); durTd.style.textAlign = 'right'; durTd.textContent = duration.toString(); tr.appendChild(durTd);
       resultsBody.insertBefore(tr, resultsBody.firstChild);
     } catch (e) { console.warn('append history failed', e); }
+  };
 
+  // Post FormData and return parsed JSON and duration
+  const postForm = async (form) => {
+    const start = Date.now();
+    try { if (processingEl) { processingEl.textContent = '0.0s'; _timerStart = Date.now(); _timerId = setInterval(() => { const s = (Date.now() - _timerStart)/1000; processingEl.textContent = s.toFixed(1) + 's'; }, 150); } } catch(e){}
+    const res = await fetch('/submit', { method: 'POST', body: form });
+    const body = await res.json();
+    const duration = Date.now() - start;
+    if (_timerId) { clearInterval(_timerId); _timerId = null; }
+    if (processingEl) processingEl.textContent = (body.processing_time_ms || body.duration_ms || duration) + ' ms';
+    return { body, duration };
+  };
+
+  // Submit the selected files and the chosen product/model to the backend.
+  // If multiple images present, run sequential per-image submissions with concurrency=2.
+  async function submit(){
+    if(!fileList.length){ alert('add images first'); return; }
+    if (_inFlight) { console.warn('submit skipped: already in-flight'); return; }
+    _inFlight = true;
+
+    // Always send all images in one request per user's preference
+    const form = new FormData();
+    for (const f of fileList) form.append('images', f);
+    form.append('product', productEl.value);
+    form.append('model', modelEl.value);
+
+    try {
+      const { body, duration } = await postForm(form);
+      appendResult(body, duration);
+    } catch (e) { console.error('submit failed', e); }
+    
     // increment completed submission counter and schedule automation if enabled
     try {
       submissionCount += 1;
@@ -197,6 +239,14 @@ window.app = (function(){
     try { thumbs.querySelectorAll('img').forEach(img => { try { URL.revokeObjectURL(img.src); } catch(e){} }); } catch(e){}
     fileList.length = 0;
     thumbs.innerHTML = '';
+    // reset automation counters and UI
+    submissionCount = 0;
+    automationActive = true;
+    if (_autoScheduleId) { clearTimeout(_autoScheduleId); _autoScheduleId = null; }
+    if (_countdownId) { clearInterval(_countdownId); _countdownId = null; }
+    if (autoWaitEl) autoWaitEl.style.display = 'none';
+    if (countdownEl) countdownEl.textContent = '--';
+    try { const finish = document.getElementById('finishBadge'); if (finish) finish.style.display = 'none'; } catch(e){}
   }
 
   // Stop automatic repeats and cancel pending scheduled submits
