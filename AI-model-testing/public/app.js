@@ -1,20 +1,16 @@
 window.app = (function(){
-  // `products` maps the UI dropdown labels to the model keys sent to the backend.
-  // To run experiments, change these strings or add new keys here and then update
-  // the `PROVIDER_MAP` in AI-model-testing/server.js to point the key to a real model id.
-  const products = {
-    ChatGPT: ['gpt-image-1','gpt-image-2','gpt-image-3'],
-    Gemini: ['gemini-image-1','gemini-image-2','gemini-image-3'],
-    Claude: ['claude-image-1','claude-image-2','claude-image-3'],
-    Grok: ['grok-image-1','grok-image-2','grok-image-3']
-  };
+  // `products` will be fetched from the backend `/models` endpoint so the UI
+  // reflects the authoritative `PROVIDER_MAP` in server.js automatically.
+  // It will be populated on load.
+  let products = {};
   const fileList = [];
   const productEl = document.getElementById('product');
   const modelEl = document.getElementById('model');
   const thumbs = document.getElementById('thumbs');
   const meta = document.getElementById('meta');
   const timeEl = document.getElementById('time');
-  const respEl = document.getElementById('response');
+  // `response` element removed from UI; keep processing metadata and history table
+  const resultsBody = document.getElementById('resultsBody');
 
   // Populate the `model` dropdown whenever the `product` selection changes.
   // Edit the `products` object above to control which keys are available in the UI.
@@ -59,7 +55,6 @@ window.app = (function(){
     form.append('product', productEl.value);
     form.append('model', modelEl.value);
 
-    respEl.textContent = 'sending...';
     const start = Date.now();
     const res = await fetch('/submit', { method: 'POST', body: form });
     const body = await res.json();
@@ -67,11 +62,50 @@ window.app = (function(){
     // Display metadata and results; backend may return measured duration_ms
     meta.textContent = `${body.product || productEl.value} / ${body.model || modelEl.value}`;
     timeEl.textContent = body.duration_ms || duration;
-    respEl.textContent = JSON.stringify(body.ai_response || body, null, 2);
+    // prefer parsed structured output when available (kept for history)
+    const parsed = body.ai_parsed || null;
+    let responseText = '';
+    if (parsed) responseText = JSON.stringify(parsed, null, 2);
+    else if (body.ai_response) responseText = JSON.stringify(body.ai_response, null, 2);
+    else responseText = JSON.stringify(body, null, 2);
+
+    // append to history table
+    try {
+      const tr = document.createElement('tr');
+      const timeTd = document.createElement('td'); timeTd.textContent = new Date().toLocaleString(); tr.appendChild(timeTd);
+      const prodTd = document.createElement('td'); prodTd.textContent = body.product || productEl.value; tr.appendChild(prodTd);
+      const modelTd = document.createElement('td'); modelTd.textContent = body.model || modelEl.value; tr.appendChild(modelTd);
+      const respTd = document.createElement('td'); respTd.style.fontFamily = 'monospace'; respTd.style.whiteSpace = 'pre-wrap'; respTd.textContent = (parsed ? JSON.stringify(parsed) : (body.ai_response ? JSON.stringify(body.ai_response) : JSON.stringify(body))).slice(0, 200);
+      tr.appendChild(respTd);
+      const durTd = document.createElement('td'); durTd.textContent = (body.duration_ms || duration).toString(); tr.appendChild(durTd);
+      resultsBody.insertBefore(tr, resultsBody.firstChild);
+    } catch (e) { console.warn('append history failed', e); }
+
+    // clear local file list and previews
+    fileList.length = 0; thumbs.innerHTML = '';
   }
 
+  // Populate models when product selection changes. Initially fetch model keys
+  // from the server so the frontend stays in sync with server mappings.
   productEl.addEventListener('change', setModels);
-  setModels();
+
+  // Fetch available products + model keys from backend
+  fetch('/models')
+    .then((r) => r.json())
+    .then((json) => {
+      products = json; // { ProductName: [modelKey1, modelKey2, ...], ... }
+      // populate product dropdown
+      productEl.innerHTML = '';
+      Object.keys(products).forEach((p) => {
+        const o = document.createElement('option'); o.value = p; o.textContent = p; productEl.appendChild(o);
+      });
+      setModels();
+    })
+    .catch((err) => {
+      console.error('failed to load models from server', err);
+      // fallback: keep product dropdown as-is (if file had defaults)
+      setModels();
+    });
 
   return { onDrop, onDragOver, onFileChange, submit };
 })();
