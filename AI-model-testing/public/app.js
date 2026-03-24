@@ -1,4 +1,7 @@
 window.app = (function(){
+  // `products` maps the UI dropdown labels to the model keys sent to the backend.
+  // To run experiments, change these strings or add new keys here and then update
+  // the `PROVIDER_MAP` in AI-model-testing/server.js to point the key to a real model id.
   const products = {
     ChatGPT: ['gpt-image-1','gpt-image-2','gpt-image-3'],
     Gemini: ['gemini-image-1','gemini-image-2','gemini-image-3'],
@@ -13,14 +16,21 @@ window.app = (function(){
   const timeEl = document.getElementById('time');
   const respEl = document.getElementById('response');
 
+  // Populate the `model` dropdown whenever the `product` selection changes.
+  // Edit the `products` object above to control which keys are available in the UI.
   function setModels(){
-    const p = productEl.value;
+    const p = productEl.value; // current product
     modelEl.innerHTML = '';
     for(const m of products[p]){
-      const o = document.createElement('option'); o.value = m; o.textContent = m; modelEl.appendChild(o);
+      // create an option element for each model key
+      const o = document.createElement('option');
+      o.value = m; // this value is sent to the backend and used to resolve mapping
+      o.textContent = m; // visible label in the dropdown
+      modelEl.appendChild(o);
     }
   }
 
+  // Handle files dragged into the drop area
   function onDrop(e){
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/'));
@@ -29,14 +39,23 @@ window.app = (function(){
   function onDragOver(e){ e.preventDefault(); }
   function onFileChange(e){ const files = Array.from(e.target.files||[]).filter(f=>f.type.startsWith('image/')); addFiles(files); }
 
+  // Add files to the local list and render thumbnails for quick visual verification
   function addFiles(files){
-    for(const f of files){ fileList.push(f); const img = document.createElement('img'); img.src = URL.createObjectURL(f); thumbs.appendChild(img); }
+    for(const f of files){
+      fileList.push(f);
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f); // local blob preview
+      thumbs.appendChild(img);
+    }
   }
 
+  // Submit the selected files and the chosen product/model to the backend.
+  // The backend will resolve the mapping and call the provider; we then display results.
   async function submit(){
     if(!fileList.length){ alert('add images first'); return; }
     const form = new FormData();
     for(const f of fileList) form.append('images', f);
+    // include our product/model keys so the backend can resolve which provider/model to call
     form.append('product', productEl.value);
     form.append('model', modelEl.value);
 
@@ -45,6 +64,7 @@ window.app = (function(){
     const res = await fetch('/submit', { method: 'POST', body: form });
     const body = await res.json();
     const duration = Date.now() - start;
+    // Display metadata and results; backend may return measured duration_ms
     meta.textContent = `${body.product || productEl.value} / ${body.model || modelEl.value}`;
     timeEl.textContent = body.duration_ms || duration;
     respEl.textContent = JSON.stringify(body.ai_response || body, null, 2);

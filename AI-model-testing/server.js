@@ -19,6 +19,10 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Map frontend product/model strings to provider + real model identifier
+// NOTE: To test a different model in future experiments, edit the mapped `model` values below.
+// Examples:
+//  - To swap ChatGPT model for experiment: change the right-hand `model` for 'gpt-image-1' to another model id.
+//  - To add a new model option: add a new key here and add the same key to the frontend `products` list in public/app.js.
 const PROVIDER_MAP = {
   ChatGPT: {
     'gpt-image-1': { provider: 'openai', model: 'gpt-image-1' },
@@ -44,10 +48,12 @@ const PROVIDER_MAP = {
 
 app.post('/submit', upload.array('images', 6), async (req, res) => {
   try {
+    // receive files and metadata
     const files = req.files || [];
     const { product, model } = req.body;
     if (!files.length) return res.status(400).json({ error: 'no images uploaded' });
 
+    // save uploaded images to local uploads dir and build public URLs
     const savedUrls = [];
     for (const f of files) {
       const name = `${Date.now()}-${f.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
@@ -56,7 +62,7 @@ app.post('/submit', upload.array('images', 6), async (req, res) => {
       savedUrls.push(`${req.protocol}://${req.get('host')}/uploads/${name}`);
     }
 
-    // JSON Schema for structured output
+    // JSON Schema for structured output (kept consistent across experiments)
     const schemaObj = {
       name: 'image_analysis',
       schema: {
@@ -85,16 +91,24 @@ app.post('/submit', upload.array('images', 6), async (req, res) => {
       }
     };
 
-    const inputs = savedUrls.map((u) => ({ type: 'image', image_url: u }));
-    inputs.push({ role: 'user', content: `Product: ${product}; Model: ${model}. Analyze images and return only JSON matching schema 'image_analysis'.` });
+    // Shared prompt template used for all providers and experiments.
+    // Keep the template here so every experiment uses the exact same instruction text.
+    // Use `{product}` and `{model}` placeholders which will be replaced at runtime.
+    const PROMPT_TEMPLATE = `Product: {product}; Model: {model}. Analyze the images and return only JSON matching schema 'image_analysis'.`;
 
-    // Resolve provider and model mapping
+    // Resolve provider and model mapping based on frontend selections
     const mapping = (PROVIDER_MAP[product] || {})[model];
 
+    // Build inputs: image items first, then the user prompt (using resolved model identifier)
+    const inputs = savedUrls.map((u) => ({ type: 'image', image_url: u }));
+    const resolvedModelForPrompt = mapping?.model || model;
+    const finalPrompt = PROMPT_TEMPLATE.replace('{product}', product).replace('{model}', resolvedModelForPrompt);
+    inputs.push({ role: 'user', content: finalPrompt });
+
+    // If mapping not found, fallback to treating `model` as an OpenAI model id
     if (!mapping) {
-      // fallback: treat provided `model` as an OpenAI model identifier
       if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
-      const start = Date.now();
+      const startTime = Date.now();
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -104,18 +118,18 @@ app.post('/submit', upload.array('images', 6), async (req, res) => {
         body: JSON.stringify({ model: model || 'MODEL_NAME', input: inputs, response_format: { type: 'json_schema', json_schema: schemaObj } })
       });
       const body = await response.json();
-      const duration = Date.now() - start;
+      const duration = Date.now() - startTime;
       return res.json({ product, model, urls: savedUrls, duration_ms: duration, ai_response: body });
     }
 
+    // Non-OpenAI providers are not implemented in this harness yet
     if (mapping.provider !== 'openai') {
-      // Provider not implemented in this test harness — return mapping so caller can extend
       return res.status(501).json({ error: 'provider_not_implemented', provider: mapping.provider, mapping });
     }
 
-    // For OpenAI provider, call the Responses API with the mapped model id
+    // OpenAI provider: call Responses API with mapped model id
     if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
-    const start = Date.now();
+    const startTime = Date.now();
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -125,9 +139,9 @@ app.post('/submit', upload.array('images', 6), async (req, res) => {
       body: JSON.stringify({ model: mapping.model, input: inputs, response_format: { type: 'json_schema', json_schema: schemaObj } })
     });
     const body = await response.json();
-    const duration = Date.now() - start;
+    const duration = Date.now() - startTime;
 
-    res.json({ product, model: mapping.model, urls: savedUrls, duration_ms: duration, ai_response: body });
+    return res.json({ product, model: mapping.model, urls: savedUrls, duration_ms: duration, ai_response: body });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'server error' });
