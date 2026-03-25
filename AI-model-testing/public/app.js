@@ -16,7 +16,7 @@ window.app = (function(){
   // automation controls
   let automationActive = true; // allow automatic repeats by default
   let submissionCount = 0; // counts completed submissions (increment when result appended)
-  const maxSubmissions = 20; // inclusive of initial one
+  let maxSubmissions = 20; // inclusive of initial one (editable by UI)
   let _autoScheduleId = null; // scheduled next submit
   let _inFlight = false; // track if submit is currently running
   let _countdownId = null;
@@ -24,6 +24,29 @@ window.app = (function(){
   const autoWaitEl = document.getElementById('autoWait');
   // seconds to wait between auto submissions (user asked about 10s)
   let waitSeconds = 5;
+  const maxSubmissionsEl = document.getElementById('maxSubmissions');
+  const waitSecondsEl = document.getElementById('waitSeconds');
+  const processedCountEl = document.getElementById('processedCount');
+  // initialize from UI inputs if present
+  try {
+    if (maxSubmissionsEl) {
+      const v = Number(maxSubmissionsEl.value || maxSubmissions);
+      if (Number.isFinite(v) && v >= 1) maxSubmissions = Math.max(1, Math.floor(v));
+      maxSubmissionsEl.addEventListener('change', () => {
+        const nv = Number(maxSubmissionsEl.value);
+        maxSubmissions = (Number.isFinite(nv) && nv >= 1) ? Math.max(1, Math.floor(nv)) : maxSubmissions;
+      });
+    }
+    if (waitSecondsEl) {
+      const w = Number(waitSecondsEl.value || waitSeconds);
+      if (Number.isFinite(w) && w >= 1) waitSeconds = Math.max(1, Math.floor(w));
+      waitSecondsEl.addEventListener('change', () => {
+        const nw = Number(waitSecondsEl.value);
+        waitSeconds = (Number.isFinite(nw) && nw >= 1) ? Math.max(1, Math.floor(nw)) : waitSeconds;
+      });
+    }
+    if (processedCountEl) processedCountEl.textContent = String(submissionCount || 0);
+  } catch (e) { /* ignore UI init errors */ }
 
   // Populate the `model` dropdown whenever the `product` selection changes.
   // Edit the `products` object above to control which keys are available in the UI.
@@ -196,6 +219,7 @@ window.app = (function(){
     // increment completed submission counter and schedule automation if enabled
     try {
       submissionCount += 1;
+      try { if (processedCountEl) processedCountEl.textContent = String(submissionCount); } catch(e){}
       // clear any previously scheduled auto call to avoid duplicates
       if (_autoScheduleId) { clearTimeout(_autoScheduleId); _autoScheduleId = null; }
 

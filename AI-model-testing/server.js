@@ -96,15 +96,22 @@ const PROVIDER_MAP = {
   // https://arxiv.org/abs/2507.01955
   // https://aimlapi.com/comparisons/llama-3-2-90b-vision-vs-gpt-4o-vision
   ChatGPT: {
-    'gpt-4o': { provider: 'openai', model: 'gpt-4o' },
-    'gpt-4o-mini': { provider: 'openai', model: 'gpt-4o-mini' },
-    'gpt-5-mini': { provider: 'openai', model: 'gpt-5-mini' }
+    'Reasoning-focused': { provider: 'openai', model: 'gpt-5.4' },
+    'Balanced (reasoning and vision)': { provider: 'openai', model: 'gpt-4o' },
+    'Low reasoning / vision baseline': { provider: 'openai', model: 'gpt-4o-mini' }
   },
-  // The chooseing reason???
+  // gemini-3.1-pro-preview (reasoning-focused) has a deep dynamic thinking budget. 
+  // gemini-2.5-flash is the balanced tradeoff between reasoning and vision.
+  // gemini-2.5-flash-lite (pure vision) has thinking disabled by default, acting as the control group.
+  // References: 
+  // https://arxiv.org/abs/2403.05530
+  // https://arxiv.org/abs/2507.06261
+  // https://arxiv.org/abs/2509.17177
+  // https://flageval-baai.github.io/LRM-Eval/
   Gemini: {
-    // 'gemini-3.1-pro': { provider: 'google', model: 'gemini-3.1-pro' }, // disabled: not available for this API key
-    'gemini-2.5-pro': { provider: 'google', model: 'gemini-2.5-pro' },
-    'gemini-2.5-flash': { provider: 'google', model: 'gemini-2.5-flash' }
+    'Reasoning-focused': { provider: 'google', model: 'gemini-3.1-pro-preview' }, 
+    'Balanced (reasoning and vision)': { provider: 'google', model: 'gemini-2.5-flash' },
+    'Low reasoning / vision baseline': { provider: 'google', model: 'gemini-2.5-flash-lite' }
   },
   Claude: {
     'claude-image-1': { provider: 'anthropic', model: 'claude-image-1' },

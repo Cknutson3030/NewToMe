@@ -116,32 +116,66 @@ async function send(model, payload, opts = {}) {
   }
   const genBody = Object.keys(generationConfig).length ? { contents: prebuiltContents, generationConfig } : { contents: prebuiltContents };
 
-  // Try generateContent first (v1beta). If it fails (404 or other), fall back to v1 predict.
+  // Prefer the v1beta generateContent endpoint for newer/preview models.
+  // Always attempt generateContent first; if it fails or is not found (404),
+  // fall back to the legacy v1 predict endpoint.
   let resp = null;
   try {
-    // Only attempt generateContent when we have contents to send
-    if (Array.isArray(prebuiltContents) && prebuiltContents.length) {
-      try {
-        resp = await doPost(genUrl, genBody);
-        // If generateContent returned 404, try predict below
-        if (resp && resp.status === 404) resp = null;
-      } catch (e) {
-        resp = null;
-      }
+    try {
+      resp = await doPost(genUrl, genBody);
+      if (resp && resp.status === 404) resp = null;
+    } catch (e) {
+      resp = null;
     }
   } catch (e) {
     resp = null;
   }
 
-  // Fallback to legacy predict endpoint when generateContent not used or failed
+  // Fallback to legacy predict endpoint when generateContent failed or returned 404
   if (!resp) {
-    resp = await doPost(predictUrl, googlePayload);
-    // If predict returned 404, attempt generateContent as a last resort
-    if (resp && resp.status === 404 && Array.isArray(prebuiltContents) && prebuiltContents.length) {
+    try {
+      resp = await doPost(predictUrl, googlePayload);
+    } catch (e) {
+      resp = null;
+    }
+    // If predict returned 404, as a last resort try generateContent again in case of transient routing
+    if (resp && resp.status === 404) {
       try {
         const tryGen = await doPost(genUrl, genBody);
         if (tryGen && tryGen.status !== 404) resp = tryGen;
       } catch (e) { /* ignore */ }
+    }
+  }
+
+  // If still no response or 404, attempt a simple model-id fallback by stripping
+  // common experimental/preview suffixes (e.g., '-thinking-exp', '-preview', '-exp')
+  // and retry once with the fallback model. This helps when a friendly UI key
+  // maps to an experimental variant not available for the API key.
+  if ((!resp || (resp && resp.status === 404)) && typeof model === 'string') {
+    const fallback = model.replace(/-(thinking(?:-[^\s]+)?|exp|preview)$/i, '');
+    if (fallback && fallback !== model) {
+      try {
+        const fallbackPredictUrl = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(fallback)}:predict?key=${apiKey}`;
+        const fallbackGenUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(fallback)}:generateContent?key=${apiKey}`;
+        const fallbackGenBody = Object.keys(generationConfig).length ? { contents: prebuiltContents, generationConfig } : { contents: prebuiltContents };
+        // try generateContent first for fallback
+        try {
+          const fbGenResp = await doPost(fallbackGenUrl, fallbackGenBody);
+          if (fbGenResp && fbGenResp.status !== 404) {
+            resp = fbGenResp;
+          }
+        } catch (e) { /* ignore */ }
+        if (!resp) {
+          try {
+            const fbPredResp = await doPost(fallbackPredictUrl, googlePayload);
+            if (fbPredResp && fbPredResp.status !== 404) resp = fbPredResp;
+          } catch (e) { /* ignore */ }
+        }
+        if (resp) {
+          // override model in debug output so callers see which real model was used
+          try { resp._fallbackModel = fallback; } catch (e) {}
+        }
+      } catch (e) { /* ignore fallback errors */ }
     }
   }
 

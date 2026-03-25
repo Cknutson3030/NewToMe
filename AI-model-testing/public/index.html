@@ -36,6 +36,13 @@
     <button id="clean" onclick="app.clean()" style="margin-top:12px;margin-left:8px">Clean</button>
     <button id="stop" onclick="app.stop()" style="margin-top:12px;margin-left:8px;background:#c00;color:#fff">Stop</button>
     <span id="finishBadge" style="display:none;margin-left:8px;color:green;font-weight:bold">Finish</span>
+    <label style="margin-left:12px">Max submissions:
+      <input id="maxSubmissions" type="number" min="1" value="20" style="width:72px;margin-left:6px" />
+    </label>
+    <label style="margin-left:12px">Auto-wait (s):
+      <input id="waitSeconds" type="number" min="1" value="5" style="width:72px;margin-left:6px" />
+    </label>
+    <span style="margin-left:12px">Processed: <strong id="processedCount">0</strong></span>
     <div id="processing" style="margin-top:8px">Processing: <span id="processingTimer">idle</span></div>
     <div id="autoWait" style="margin-top:6px;display:none">Next auto-submit in: <span id="countdown">--</span></div>
 
