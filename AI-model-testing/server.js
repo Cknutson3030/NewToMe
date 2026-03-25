@@ -226,33 +226,19 @@ app.post('/submit', upload.any(), async (req, res) => {
     // Keep the template here so every experiment uses the exact same instruction text.
     // Use `{product}` and `{model}` placeholders which will be replaced at runtime.
      const PROMPT_TEMPLATE = `
-  You are a sustainability and life-cycle assessment expert following ISO 14067 principles:
+  1. You are a sustainability and life-cycle assessment expert following ISO 14067 principles:
   - Life-cycle perspective
   - Transparency
   - No misleading precision
   - Consistent system boundaries
   (Carbon Footprint of Products).
 
-  DATA SOURCES ONLY FROM HERE:
-  https://www.climatiq.io/data/source/openio_canada
-  https://ghgprotocol.org/Third-Party-Databases/Canadian-Raw-Materials-Database
-  https://www.canada.ca/en/environment-climate-change/services/managing-pollution/fuel-life-cycle-assessment-model.html
-  https://www.canada.ca/en/environment-climate-change/services/climate-change/pricing-pollution-how-it-will-work/output-based-pricing-system/federal-greenhouse-gas-offset-system/emission-factors-reference-values.html
-  https://uwaterloo.ca/canadian-raw-materials-database/life-cycle-inventory-databasesbases-donnees-linventaire
-  https://publications.gc.ca/site/eng/9.955129/publication.html
-  https://eeecc.nrc-cnrc.gc.ca/en/life-cycle-inventory-warehouse
-  https://www.canada.ca/en/environment-climate-change/services/environmental-indicators/greenhouse-gas-emissions.html
-  https://www.ipcc-nggip.iges.or.jp/public/2006gl/index.html
-  https://www.canada.ca/en/treasury-board-secretariat/services/innovation/greening-government/government-canada-greenhouse-gas-emissions-inventory.html
-  https://publications.gc.ca/collections/collection_2022/eccc/En14-493-1-2022-eng.pdf
-  https://www.canada.ca/en/environment-climate-change/services/managing-pollution/fuel-life-cycle-assessment-model/methodology.html
-
-  Analyze the provided images and perform the following tasks:
-
-  1. Assume a functional unit of:
+  2. Analyze the provided images and perform the following tasks:
+  2.1 Search the similar product that has been assessed in the literature, report or public databases, and use it as a reference to estimate the carbon footprint of the product in the provided images.
+  2.2 Assume a functional unit of:
     "One unit of the identified product, suitable for its intended use."
-
-  2. Using reasonable, transparent assumptions and publicly accepted
+  2.3 Estimate rough weight/material and map to default industry averages.
+  2.4 Using reasonable, transparent assumptions and publicly accepted
   life-cycle emission factors (e.g. industry averages, IPCC-aligned values),
   estimate greenhouse gas emissions (kg CO₂e) for EACH of the following
   life-cycle stages:
@@ -263,10 +249,22 @@ app.post('/submit', upload.any(), async (req, res) => {
     d. Use phase  
     e. End-of-life
 
-  3. Output the results in a structured JSON object conforming to the provided schema.
+  2.5 Output the results in a structured JSON object conforming to the provided schema.
 
-  4. For each stage, include:
+  2.6 For each stage, include:
     - Estimated emissions (kg CO₂e)
+
+  3. If there is no direct match, use the following datasource and estimated the potentail Carbon Footprint of Products:
+  https://uwaterloo.ca/canadian-raw-materials-database/life-cycle-inventory-databasesbases-donnees-linventaire
+  https://www.canada.ca/en/environment-climate-change/services/managing-pollution/fuel-life-cycle-assessment-model.html
+  https://www.canada.ca/en/environment-climate-change/services/climate-change/pricing-pollution-how-it-will-work/output-based-pricing-system/federal-greenhouse-gas-offset-system/emission-factors-reference-values.html
+  https://publications.gc.ca/site/eng/9.955129/publication.html
+  https://eeecc.nrc-cnrc.gc.ca/en/life-cycle-inventory-warehouse
+  https://www.canada.ca/en/environment-climate-change/services/environmental-indicators/greenhouse-gas-emissions.html
+  https://www.ipcc-nggip.iges.or.jp/public/2006gl/index.html
+  https://www.canada.ca/en/treasury-board-secretariat/services/innovation/greening-government/government-canada-greenhouse-gas-emissions-inventory.html
+  https://publications.gc.ca/collections/collection_2022/eccc/En14-493-1-2022-eng.pdf
+  https://www.canada.ca/en/environment-climate-change/services/managing-pollution/fuel-life-cycle-assessment-model/methodology.html
   `;
 
     // Resolve provider and model mapping based on frontend selections
