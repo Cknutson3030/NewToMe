@@ -9,6 +9,19 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../theme/ThemeProvider';
 import ListingCard from '../components/ListingCard';
 
+type Listing = {
+  id?: string;
+  _id?: string;
+  title?: string;
+  description?: string;
+  owner_user_id?: string;
+  listing_images?: { image_url?: string; sort_order?: number }[];
+  listing_image_url?: string;
+  price?: number;
+  location_city?: string;
+  item_condition?: string;
+};
+
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { signOut, user } = useAuth();
@@ -26,7 +39,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       setMessagingListingId(null);
     }
   }, [navigation]);
-  const [listings, setListings] = useState([]);
+  const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -62,10 +75,10 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       const res = await getListings(p);
       const allData = Array.isArray(res) ? res : res.data || [];
       // Exclude current user's own listings (they appear in My Listings)
-      const data = user?.id ? allData.filter((item: any) => item.owner_user_id !== user.id) : allData;
+      const data = (user?.id ? allData.filter((item: any) => item.owner_user_id !== user.id) : allData) as Listing[];
 
       if (append) {
-        setListings((prev: any[]) => [...prev, ...data]);
+        setListings((prev: Listing[]) => [...prev, ...data]);
         setOffset((prev) => prev + data.length);
       } else {
         setListings(data);
@@ -96,7 +109,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       params.sort_order = sortOrder;
       const res = await getListings(params);
       const allData = Array.isArray(res) ? res : res.data || [];
-      const data = user?.id ? allData.filter((item: any) => item.owner_user_id !== user.id) : allData;
+      const data = (user?.id ? allData.filter((item: any) => item.owner_user_id !== user.id) : allData) as Listing[];
       setListings(data);
       setOffset(data.length);
       setHasMore(data.length === (Number(limit) || 20));
@@ -219,7 +232,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                 onPressEdit={handleEdit}
                 onPressMessage={handleMessageSeller}
                 onPressRequest={handleRequestBuy}
-                requested={requestedIds.includes(item.id)}
+                requested={item.id ? requestedIds.includes(item.id) : false}
               />
             );
           }}
