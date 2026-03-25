@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI Model Testing</title>
+    <style>
+      body{font-family:system-ui,Arial;margin:16px}
+      .drop{border:2px dashed #aaa;padding:16px;min-height:140px}
+      img{width:80px;height:80px;object-fit:cover;margin-right:8px}
+      pre{background:#f6f8fa;padding:12px;border-radius:6px}
+    </style>
+  </head>
+  <body>
+    <h2>AI Model Testing — Image Analysis</h2>
+
+    <label>Product:
+      <select id="product">
+        <option>ChatGPT</option>
+        <option>Gemini</option>
+        <option>Claude</option>
+        <option>Grok</option>
+      </select>
+    </label>
+
+    <label style="margin-left:12px">Model:
+      <select id="model"></select>
+    </label>
+
+    <div id="drop" class="drop" ondrop="app.onDrop(event)" ondragover="app.onDragOver(event)">
+      <p>Drag & drop images here, or <input id="file" name="images" type="file" accept="image/*" capture="environment" multiple onchange="app.onFileChange(event)"></p>
+      <div id="thumbs" style="display:flex;margin-top:8px"></div>
+    </div>
+
+    <button id="submit" onclick="app.submit()" style="margin-top:12px">Submit</button>
+    <button id="clean" onclick="app.clean()" style="margin-top:12px;margin-left:8px">Clean</button>
+    <button id="stop" onclick="app.stop()" style="margin-top:12px;margin-left:8px;background:#c00;color:#fff">Stop</button>
+    <span id="finishBadge" style="display:none;margin-left:8px;color:green;font-weight:bold">Finish</span>
+    <label style="margin-left:12px">Max submissions:
+      <input id="maxSubmissions" type="number" min="1" value="20" style="width:72px;margin-left:6px" />
+    </label>
+    <label style="margin-left:12px">Auto-wait (s):
+      <input id="waitSeconds" type="number" min="1" value="5" style="width:72px;margin-left:6px" />
+    </label>
+    <span style="margin-left:12px">Processed: <strong id="processedCount">0</strong></span>
+    <div id="processing" style="margin-top:8px">Processing: <span id="processingTimer">idle</span></div>
+    <div id="autoWait" style="margin-top:6px;display:none">Next auto-submit in: <span id="countdown">--</span></div>
+
+    <!-- Result summary removed; history table shows structured outputs -->
+
+    <h3>History</h3>
+    <table id="resultsTable" border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th style="width:60px">No.</th>
+          <th style="width:160px">Time</th>
+          <th>AI Product</th>
+          <th>Model</th>
+          <th>raw_material_extraction (kg CO₂e)</th>
+          <th>manufacturing (kg CO₂e)</th>
+          <th>transportation_distribution (kg CO₂e)</th>
+          <th>cradle-to-gate (kg CO₂e)</th>
+          <th>use_phase (kg CO₂e)</th>
+          <th>end_of_life (kg CO₂e)</th>
+          <th>cradle-to-grave (kg CO₂e)</th>
+          <th style="width:120px">Input Tokens</th>
+          <th style="width:120px">Output Tokens</th>
+          <th style="width:120px">processing_ms</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+
+    <script src="app.js"></script>
+  </body>
+</html>
