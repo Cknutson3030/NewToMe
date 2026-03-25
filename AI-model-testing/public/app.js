@@ -159,7 +159,23 @@ window.app = (function(){
       const modelTd = document.createElement('td'); modelTd.textContent = body.model || modelEl.value; tr.appendChild(modelTd);
 
       const fields = ['raw_material_extraction','manufacturing','transportation_distribution','use_phase','end_of_life'];
-      for (const f of fields) {
+      // append raw stage columns
+      for (const f of ['raw_material_extraction','manufacturing','transportation_distribution']) {
+        const td = document.createElement('td'); td.style.whiteSpace = 'pre-wrap';
+        const v = getStageValue(body, f);
+        td.textContent = (v == null ? '' : (typeof v === 'number' ? v : String(v)));
+        tr.appendChild(td);
+      }
+
+      // compute and append cradle-to-gate = raw_material_extraction + manufacturing + transportation_distribution
+      const rmVal = getStageValue(body, 'raw_material_extraction');
+      const manuVal = getStageValue(body, 'manufacturing');
+      const transVal = getStageValue(body, 'transportation_distribution');
+      const cradleToGate = [rmVal, manuVal, transVal].reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
+      const gradTd = document.createElement('td'); gradTd.style.textAlign = 'right'; gradTd.textContent = (cradleToGate === 0 ? ( (rmVal==null && manuVal==null && transVal==null) ? '' : '0' ) : String(cradleToGate)); tr.appendChild(gradTd);
+
+      // append remaining stage columns (use_phase, end_of_life)
+      for (const f of ['use_phase','end_of_life']) {
         const td = document.createElement('td'); td.style.whiteSpace = 'pre-wrap';
         const v = getStageValue(body, f);
         td.textContent = (v == null ? '' : (typeof v === 'number' ? v : String(v)));
@@ -167,8 +183,9 @@ window.app = (function(){
       }
 
       const parsed = body.ai_parsed_normalized || body.ai_parsed || {};
-      const totalVal = (body && typeof body.total === 'number') ? body.total : (parsed && typeof parsed.total === 'number' ? parsed.total : null);
-      const totalTd = document.createElement('td'); totalTd.style.textAlign = 'right'; totalTd.textContent = (totalVal == null ? '' : totalVal.toString()); tr.appendChild(totalTd);
+      // rename total --> cradle-to-grave (use body.total or parsed.total when available)
+      const graveVal = (body && typeof body.total === 'number') ? body.total : (parsed && typeof parsed.total === 'number' ? parsed.total : null);
+      const totalTd = document.createElement('td'); totalTd.style.textAlign = 'right'; totalTd.textContent = (graveVal == null ? '' : graveVal.toString()); tr.appendChild(totalTd);
 
       let inputTokensVal = null, outputTokensVal = null;
       try {
