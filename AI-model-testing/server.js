@@ -55,7 +55,9 @@ const EFFECTIVE_TEXT_VERBOSITY = normalizeVerbosity(DEFAULT_TEXT_VERBOSITY);
 const SLIM_RESPONSE = process.env.SLIM_RESPONSE === '1' || false;
 
 // Models that do NOT accept `reasoning` parameter in the Responses API payload
-const MODELS_WITHOUT_REASONING = ['gpt-4o','gpt-4o-mini'];
+// Add Grok v4 models here since xAI docs state `reasoning_effort` is not supported
+// by grok-4 and will error if included.
+const MODELS_WITHOUT_REASONING = ['gpt-4o','gpt-4o-mini','grok-4'];
 const modelSupportsReasoning = (modelId) => {
   if (!modelId || typeof modelId !== 'string') return false;
   for (const p of MODELS_WITHOUT_REASONING) if (modelId.startsWith(p)) return false;
@@ -114,27 +116,28 @@ const PROVIDER_MAP = {
     'Low reasoning / vision baseline': { provider: 'google', model: 'gemini-2.5-flash-lite' }
   },
   Claude: {
-    'claude-image-1': { provider: 'anthropic', model: 'claude-image-1' },
-    'claude-image-2': { provider: 'anthropic', model: 'claude-image-2' },
-    'claude-image-3': { provider: 'anthropic', model: 'claude-image-3' }
+    'Reasoning-focused': { provider: 'anthropic', model: 'claude-opus-4-6' },
+    'Balanced (reasoning and vision)': { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+    'Low reasoning / vision baseline': { provider: 'anthropic', model: 'claude-haiku-4-5' }
   },
   Grok: {
-    'grok-image-1': { provider: 'xai', model: 'grok-image-1' },
-    'grok-image-2': { provider: 'xai', model: 'grok-image-2' },
-    'grok-image-3': { provider: 'xai', model: 'grok-image-3' }
+    'Reasoning-focused': { provider: 'xai', model: 'grok-4.20-0309-reasoning' },
+    'Balanced (reasoning and vision)': { provider: 'xai', model: 'grok-4-1-fast-reasoning' },
+    // Use a grok-4 non-reasoning variant available to this API key as baseline
+    'Low reasoning / vision baseline': { provider: 'xai', model: 'grok-4-1-fast-non-reasoning' }
   }
 };
 
 // Use upload.any() so the server accepts files regardless of the field name used
 // by the browser (drag/drop libraries or native input may use different names).
 app.post('/submit', upload.any(), async (req, res) => {
-  let cleanupSavedFiles = async () => {};
   try {
-    // receive files and metadata
     // With upload.any(), multer places all files in req.files as an array.
     const files = req.files || [];
     const { product, model } = req.body;
-    if (!files.length) return res.status(400).json({ error: 'no images uploaded' });
+    // Allow URL-based image tests via form field `image_url` or `image_urls` when no files are uploaded
+    const hasImageUrlField = req.body && (req.body.image_url || req.body.image_urls || req.body.imageUrl || req.body.imageUrls);
+    if (!files.length && !hasImageUrlField) return res.status(400).json({ error: 'no images uploaded' });
 
     // save uploaded images to local uploads dir and build public URLs
     const savedUrls = [];
@@ -152,6 +155,22 @@ app.post('/submit', upload.any(), async (req, res) => {
       // create a base64 data URL so the upstream API does not try to fetch localhost URLs
       const base64 = f.buffer.toString('base64');
       savedDataUrls.push(`data:${f.mimetype};base64,${base64}`);
+    }
+
+    // If no files were uploaded but the client provided image URLs in form fields,
+    // accept `image_url` (single) or `image_urls` (comma-separated) to allow quick URL-based tests.
+    if (!savedDataUrls.length) {
+      const imgField = req.body && (req.body.image_url || req.body.image_urls || req.body.imageUrl || req.body.imageUrls);
+      if (imgField) {
+        const urls = Array.isArray(imgField) ? imgField : String(imgField).split(',').map(s=>s.trim()).filter(Boolean);
+        for (const u of urls) {
+          // Accept only http(s) URLs
+          if (typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://'))) {
+            savedUrls.push(u);
+            savedDataUrls.push(u);
+          }
+        }
+      }
     }
 
     // helper to remove saved files for this request
@@ -453,6 +472,29 @@ app.post('/submit', upload.any(), async (req, res) => {
           // Ensure ai_response.usage exposes explicit input/output token fallbacks
           const normalized = extractNormalizedUsage(body || sanitizedRaw);
           if (sanitizedRaw && typeof sanitizedRaw === 'object') sanitizedRaw.usage = Object.assign({}, sanitizedRaw.usage || {}, normalized);
+          // Extra best-effort: if provider produced `candidates` (Gemini-like),
+          // try extracting the first JSON-like part text into parsedOutput.
+          try {
+            if (!parsedOutput && sanitizedRaw && Array.isArray(sanitizedRaw.candidates) && sanitizedRaw.candidates.length) {
+              for (const cand of sanitizedRaw.candidates) {
+                if (!cand || !cand.content) continue;
+                const parts = (cand.content.parts && Array.isArray(cand.content.parts)) ? cand.content.parts : (Array.isArray(cand.content) ? cand.content : null);
+                if (!parts) continue;
+                for (const part of parts) {
+                  if (!part) continue;
+                  const txt = (typeof part === 'string') ? part : (part.text || part.content || null);
+                  if (!txt || typeof txt !== 'string') continue;
+                  try { const v = JSON.parse(txt); if (v && typeof v === 'object') { parsedOutput = v; break; } } catch (e) {}
+                  const first = txt.indexOf('{'); const last = txt.lastIndexOf('}');
+                  if (first !== -1 && last !== -1 && last > first) {
+                    const sub = txt.slice(first, last + 1);
+                    try { const v = JSON.parse(sub); if (v && typeof v === 'object') { parsedOutput = v; break; } } catch (e) {}
+                  }
+                }
+                if (parsedOutput) break;
+              }
+            }
+          } catch (e) { /* ignore best-effort candidate extraction errors */ }
         } catch (e) { sanitizedRaw = sanitizeRawResponse(body); }
         // unwrap single-key wrapper objects (e.g., { structured_information_response: { ... } })
         try {
@@ -466,6 +508,62 @@ app.post('/submit', upload.any(), async (req, res) => {
         } catch(e) { /* ignore */ }
 
       // build lifecycle summary fields from parsed output when available
+        // Final enforce: if parsedOutput still null, try direct parse of the
+        // first ai_response.content text or first sanitized.candidates part text.
+        if (!parsedOutput) {
+          try {
+            if (sanitizedRaw && sanitizedRaw.ai_response && Array.isArray(sanitizedRaw.ai_response.content)) {
+              for (const item of sanitizedRaw.ai_response.content) {
+                if (item && item.type === 'text' && typeof item.text === 'string') {
+                try {
+                  // Try raw parse first
+                  const v = JSON.parse(item.text);
+                  if (v && typeof v === 'object') { parsedOutput = v; break; }
+                } catch (e) {
+                  // Try unwrapping quoted JSON string (e.g., '"{...}"')
+                  try {
+                    let t = item.text.trim();
+                    if (t.startsWith('"') && t.endsWith('"')) {
+                      t = t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                      const v2 = JSON.parse(t);
+                      if (v2 && typeof v2 === 'object') { parsedOutput = v2; break; }
+                    }
+                  } catch (e2) {}
+                }
+                }
+                if (item && item.type === 'message' && Array.isArray(item.content)) {
+                  for (const c of item.content) {
+                    if (c && c.type === 'text' && typeof c.text === 'string') {
+                      try { const v = JSON.parse(c.text); if (v && typeof v === 'object') { parsedOutput = v; break; } } catch (e) {
+                        try {
+                          let t = c.text.trim();
+                          if (t.startsWith('"') && t.endsWith('"')) {
+                            t = t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                            const v2 = JSON.parse(t);
+                            if (v2 && typeof v2 === 'object') { parsedOutput = v2; break; }
+                          }
+                        } catch (e2) {}
+                      }
+                    }
+                  }
+                  if (parsedOutput) break;
+                }
+              }
+            }
+            if (!parsedOutput && sanitizedRaw && Array.isArray(sanitizedRaw.candidates)) {
+              for (const cand of sanitizedRaw.candidates) {
+                const parts = (cand && cand.content && Array.isArray(cand.content.parts)) ? cand.content.parts : null;
+                if (!parts) continue;
+                for (const p of parts) {
+                  const txt = (typeof p === 'string') ? p : (p.text || null);
+                  if (!txt) continue;
+                  try { const v = JSON.parse(txt); if (v && typeof v === 'object') { parsedOutput = v; break; } } catch (e) {}
+                }
+                if (parsedOutput) break;
+              }
+            }
+          } catch (e) { /* ignore enforced parse errors */ }
+        }
       const normalizeStageValue = (val) => {
         if (val == null) return null;
         // If it's already a number, return it
@@ -561,6 +659,38 @@ app.post('/submit', upload.any(), async (req, res) => {
       await cleanupSavedFiles();
       return res.status(501).json({ error: 'provider_not_implemented', provider: mapping.provider, mapping, message: e && e.message });
     }
+    // Quick early extraction: if provider returned ai_response.content with a JSON string,
+    // grab it now so downstream parsing uses it.
+    try {
+      if (body && body.ai_response && Array.isArray(body.ai_response.content)) {
+        for (const item of body.ai_response.content) {
+          if (!item) continue;
+          if (item.type === 'text' && typeof item.text === 'string') {
+            try {
+              const candidate = JSON.parse(item.text);
+              if (candidate && typeof candidate === 'object') {
+                // Attach a synthetic parsedOutput so the later parse flow picks it up
+                body.output_parsed = candidate;
+                break;
+              }
+            } catch (e) {}
+          }
+          if (item.type === 'message' && Array.isArray(item.content)) {
+            for (const c of item.content) {
+              if (c && c.type === 'text' && typeof c.text === 'string') {
+                try {
+                  const candidate = JSON.parse(c.text);
+                  if (candidate && typeof candidate === 'object') {
+                    body.output_parsed = candidate; break;
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+          if (body.output_parsed) break;
+        }
+      }
+    } catch (e) { /* ignore early extraction errors */ }
     try { console.log('response usage', body.usage || (body.ai_response && body.ai_response.usage) || null); } catch(e){}
     // attempt to extract parsed structured output (robust helper)
     const parseStructuredOutput = (resp) => {
@@ -595,6 +725,132 @@ app.post('/submit', upload.any(), async (req, res) => {
       let parsedOutputFromProvider = null;
       try { parsedOutputFromProvider = await providers.parseResponse(mapping.provider, body); } catch (e) { parsedOutputFromProvider = null; }
       let parsedOutput = (parsedOutputFromProvider && parsedOutputFromProvider.parsedOutput) ? parsedOutputFromProvider.parsedOutput : parseStructuredOutput(body);
+      try { console.log('debug parsedOutput initial type:', parsedOutput === null ? 'null' : typeof parsedOutput); } catch (e) {}
+
+      // Special-case fallback for Claude: sometimes the API returns a JSON
+      // string that is itself wrapped in quotes (escaped). If initial parsing
+      // didn't find structured JSON, attempt to unwrap quoted JSON from the
+      // Anthropic `ai_response.content` text blocks for models named "claude-*".
+      try {
+        if (!parsedOutput && mapping && mapping.provider === 'anthropic' && mapping.model && String(mapping.model).toLowerCase().startsWith('claude')) {
+          const tryUnwrapQuoted = (txt) => {
+            if (!txt || typeof txt !== 'string') return null;
+            let s = txt.trim();
+            // If it's a quoted JSON string like '"{...}"', unwrap and unescape
+            if (s.startsWith('"') && s.endsWith('"')) {
+              s = s.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            }
+            try { const v = JSON.parse(s); if (v && typeof v === 'object') return v; } catch (e) {}
+            const first = s.indexOf('{'); const last = s.lastIndexOf('}');
+            if (first !== -1 && last !== -1 && last > first) {
+              const sub = s.slice(first, last + 1);
+              try { const v2 = JSON.parse(sub); if (v2 && typeof v2 === 'object') return v2; } catch (e) {}
+            }
+            return null;
+          };
+
+          if (body && body.ai_response && Array.isArray(body.ai_response.content)) {
+            for (const item of body.ai_response.content) {
+              if (!item) continue;
+              if (item.type === 'text' && typeof item.text === 'string') {
+                const v = tryUnwrapQuoted(item.text);
+                if (v) { parsedOutput = v; break; }
+              }
+              if (item.type === 'message' && Array.isArray(item.content)) {
+                for (const c of item.content) {
+                  if (!c) continue;
+                  if (c.type === 'text' && typeof c.text === 'string') {
+                    const v2 = tryUnwrapQuoted(c.text);
+                    if (v2) { parsedOutput = v2; break; }
+                  }
+                }
+                if (parsedOutput) break;
+              }
+            }
+          }
+        }
+      } catch (e) { /* best-effort only */ }
+
+      // If provider returned a JSON string (common when providers embed JSON in a text block), try parsing it
+      try {
+        if (parsedOutput && typeof parsedOutput === 'string') {
+          const maybe = JSON.parse(parsedOutput);
+          if (maybe && typeof maybe === 'object') parsedOutput = maybe;
+        }
+      } catch (e) { /* leave parsedOutput as-is if not valid JSON */ }
+
+      // Fallback: some providers (Anthropic) embed JSON inside top-level body.content[].content[].text
+      if (!parsedOutput && body && Array.isArray(body.content)) {
+        try {
+          for (const item of body.content) {
+            if (!item) continue;
+            if (item.type === 'message' && Array.isArray(item.content)) {
+              for (const c of item.content) {
+                if (c && c.type === 'text' && typeof c.text === 'string') {
+                  try {
+                    const candidate = JSON.parse(c.text);
+                    if (candidate && typeof candidate === 'object') { parsedOutput = candidate; break; }
+                  } catch (e) { /* ignore parse error */ }
+                }
+              }
+            }
+            if (parsedOutput) break;
+          }
+        } catch (e) { /* ignore fallback extraction errors */ }
+      }
+
+      // Helper: try to extract JSON object from an arbitrary text string by
+      // locating the first {...} block and parsing it. Returns object or null.
+      // Robust JSON extraction: try direct parse, then search for balanced
+      // `{...}` blocks and attempt to parse each candidate until one succeeds.
+      const extractJSONFromString = (txt) => {
+        if (!txt || typeof txt !== 'string') return null;
+        // Quick attempt: direct JSON.parse
+        try { const v = JSON.parse(txt); if (v && typeof v === 'object') return v; } catch (e) {}
+        // Search for balanced JSON object substrings starting at each `{`
+        for (let i = 0; i < txt.length; i++) {
+          if (txt[i] !== '{') continue;
+          let depth = 0;
+          for (let j = i; j < txt.length; j++) {
+            const ch = txt[j];
+            if (ch === '{') depth++;
+            else if (ch === '}') depth--;
+            if (depth === 0) {
+              const candidate = txt.slice(i, j + 1);
+              try { const v = JSON.parse(candidate); if (v && typeof v === 'object') return v; } catch (e) {}
+              break; // move to next opening brace
+            }
+          }
+        }
+        return null;
+      };
+
+      // Additional fallback: some adapters return the structured content under
+      // `ai_response.content` (Anthropic-style). Scan text fields and structured_output items.
+      if (!parsedOutput && body && body.ai_response && Array.isArray(body.ai_response.content)) {
+        try {
+          for (const item of body.ai_response.content) {
+            if (!item) continue;
+            // If item contains nested content parts (message style)
+            if (item.type === 'message' && Array.isArray(item.content)) {
+              for (const c of item.content) {
+                if (!c) continue;
+                if (c.type === 'structured_output' && c.value) { parsedOutput = c.value; break; }
+                if (c.type === 'text' && typeof c.text === 'string') {
+                  const candidate = extractJSONFromString(c.text);
+                  if (candidate) { console.log('extracted candidate from ai_response.content:', Object.keys(candidate || {}).slice(0,10)); parsedOutput = candidate; break; }
+                }
+              }
+            }
+            // If item itself is a plain text block
+            if (!parsedOutput && item.type === 'text' && typeof item.text === 'string') {
+              const candidate = extractJSONFromString(item.text);
+              if (candidate) { console.log('extracted candidate from ai_response.text:', Object.keys(candidate || {}).slice(0,10)); parsedOutput = candidate; break; }
+            }
+            if (parsedOutput) break;
+          }
+        } catch (e) { /* ignore */ }
+      }
         // sanitize parsed output: remove verbose fields the frontend doesn't need
         const KEYS_TO_REMOVE = ['assumptions','coefficent','coefficient'];
         const removeKeysDeep = (obj) => {
@@ -676,8 +932,159 @@ app.post('/submit', upload.any(), async (req, res) => {
       if (sanitizedRaw && typeof sanitizedRaw === 'object') sanitizedRaw.usage = Object.assign({}, sanitizedRaw.usage || {}, normalized);
     } catch (e) { /* ignore */ }
 
+    // Extra fallback: if we still don't have parsedOutput, try extracting JSON
+    // directly from sanitizedRaw.ai_response.content (common Anthropic shape)
+    if (!parsedOutput && sanitizedRaw && sanitizedRaw.ai_response && Array.isArray(sanitizedRaw.ai_response.content)) {
+      try {
+        for (const item of sanitizedRaw.ai_response.content) {
+          if (!item) continue;
+          if (item.type === 'message' && Array.isArray(item.content)) {
+            for (const c of item.content) {
+              if (!c) continue;
+              if (c.type === 'text' && typeof c.text === 'string') {
+                const candidate = extractJSONFromString(c.text);
+                if (candidate) { parsedOutput = candidate; break; }
+              }
+              if (c.type === 'structured_output' && c.value) { parsedOutput = c.value; break; }
+            }
+          }
+          if (!parsedOutput && item.type === 'text' && typeof item.text === 'string') {
+            const candidate = extractJSONFromString(item.text);
+            if (candidate) { parsedOutput = candidate; break; }
+          }
+          if (parsedOutput) break;
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // Final strong fallback: attempt to extract JSON from sanitized `candidates`
+    // or from `body.ai_response.content` text blocks if still missing.
+    if (!parsedOutput) {
+      try {
+        if (sanitizedRaw && Array.isArray(sanitizedRaw.candidates)) {
+          for (const cand of sanitizedRaw.candidates) {
+            if (!cand || !cand.content) continue;
+            const parts = (cand.content.parts && Array.isArray(cand.content.parts)) ? cand.content.parts : (Array.isArray(cand.content) ? cand.content : null);
+            if (!parts) continue;
+              for (const p of parts) {
+              const txt = (typeof p === 'string') ? p : (p.text || p.content || null);
+              if (!txt || typeof txt !== 'string') continue;
+              try { const v = JSON.parse(txt); if (v && typeof v === 'object') { console.log('final fallback: parsed from sanitized.candidates (direct)'); parsedOutput = v; break; } } catch (e) {}
+              // try balanced extraction
+              const candidate = extractJSONFromString(txt);
+              if (candidate) { console.log('final fallback: parsed from sanitized.candidates'); parsedOutput = candidate; break; }
+              // try unwrap quoted JSON string
+              try {
+                let t = txt.trim();
+                if (t.startsWith('"') && t.endsWith('"')) {
+                  t = t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                  const v2 = JSON.parse(t);
+                  if (v2 && typeof v2 === 'object') { console.log('final fallback: parsed from sanitized.candidates (unwrapped)'); parsedOutput = v2; break; }
+                }
+              } catch (e) {}
+            }
+            if (parsedOutput) break;
+          }
+        }
+        if (!parsedOutput && body && body.ai_response && Array.isArray(body.ai_response.content)) {
+              for (const item of body.ai_response.content) {
+            if (!item) continue;
+            if (item.type === 'text' && typeof item.text === 'string') {
+              const txt = item.text;
+              try { const v = JSON.parse(txt); if (v && typeof v === 'object') { console.log('final fallback: parsed from body.ai_response.content text (direct)'); parsedOutput = v; break; } } catch (e) {}
+              const candidate = extractJSONFromString(txt);
+              if (candidate) { console.log('final fallback: parsed from body.ai_response.content text'); parsedOutput = candidate; break; }
+              try {
+                let t = txt.trim();
+                if (t.startsWith('"') && t.endsWith('"')) {
+                  t = t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                  const v2 = JSON.parse(t);
+                  if (v2 && typeof v2 === 'object') { console.log('final fallback: parsed from body.ai_response.content text (unwrapped)'); parsedOutput = v2; break; }
+                }
+              } catch (e2) {}
+            }
+            if (item.type === 'message' && Array.isArray(item.content)) {
+              for (const c of item.content) {
+                if (c && c.type === 'text' && typeof c.text === 'string') {
+                  const txt2 = c.text;
+                  try { const v = JSON.parse(txt2); if (v && typeof v === 'object') { parsedOutput = v; break; } } catch (e) {}
+                  const candidate = extractJSONFromString(txt2);
+                  if (candidate) { parsedOutput = candidate; break; }
+                  try {
+                    let t2 = txt2.trim();
+                    if (t2.startsWith('"') && t2.endsWith('"')) {
+                      t2 = t2.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                      const v3 = JSON.parse(t2);
+                      if (v3 && typeof v3 === 'object') { parsedOutput = v3; break; }
+                    }
+                  } catch (e3) {}
+                }
+              }
+            }
+            if (parsedOutput) break;
+          }
+        }
+      } catch (e) { /* ignore final fallback errors */ }
+    }
+
     // build lifecycle summary fields from parsed output when available
+    // Extra enforced parse right before normalization: if parsedOutput still null,
+    // attempt direct parsing of body.ai_response.content or sanitizedRaw.candidates.
+    if (!parsedOutput) {
+      try {
+        if (body && body.ai_response && Array.isArray(body.ai_response.content)) {
+          for (const it of body.ai_response.content) {
+            if (!it) continue;
+            if (it.type === 'text' && typeof it.text === 'string') {
+              try { const v = JSON.parse(it.text); if (v && typeof v === 'object') { parsedOutput = v; break; } } catch (e) {}
+            }
+            if (it.type === 'message' && Array.isArray(it.content)) {
+              for (const c of it.content) {
+                if (c && c.type === 'text' && typeof c.text === 'string') {
+                  try { const v = JSON.parse(c.text); if (v && typeof v === 'object') { parsedOutput = v; break; } } catch (e) {}
+                }
+              }
+              if (parsedOutput) break;
+            }
+          }
+        }
+        if (!parsedOutput && sanitizedRaw && Array.isArray(sanitizedRaw.candidates)) {
+          for (const cand of sanitizedRaw.candidates) {
+            if (!cand || !cand.content) continue;
+            const parts = (cand.content.parts && Array.isArray(cand.content.parts)) ? cand.content.parts : (Array.isArray(cand.content) ? cand.content : null);
+            if (!parts) continue;
+            for (const p of parts) {
+              const t = (typeof p === 'string') ? p : (p.text || null);
+              if (!t) continue;
+              try { const v = JSON.parse(t); if (v && typeof v === 'object') { parsedOutput = v; break; } } catch (e) {}
+            }
+            if (parsedOutput) break;
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
     // Normalize values (same logic as above branch)
+    // Final fallback: if parsedOutput is still empty, try a regex-based extraction
+    // from sanitizedRaw.ai_response textual content to capture JSON-in-text cases.
+    if (!parsedOutput && sanitizedRaw && sanitizedRaw.ai_response) {
+      try {
+        const ar = sanitizedRaw.ai_response;
+        const contentArr = Array.isArray(ar.content) ? ar.content : (ar.message && Array.isArray(ar.message.content) ? ar.message.content : null);
+        if (Array.isArray(contentArr)) {
+          for (const it of contentArr) {
+            if (!it) continue;
+            const txt = (it && typeof it.text === 'string') ? it.text : (typeof it === 'string' ? it : null);
+            if (!txt) continue;
+            const first = txt.indexOf('{');
+            const last = txt.lastIndexOf('}');
+            if (first !== -1 && last !== -1 && last > first) {
+              const sub = txt.slice(first, last + 1);
+              try { const cand = JSON.parse(sub); if (cand && typeof cand === 'object') { parsedOutput = cand; break; } } catch (e) {}
+            }
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
     const normalizeStageValue = (val) => {
       if (val == null) return null;
       if (typeof val === 'number' && Number.isFinite(val)) return val;

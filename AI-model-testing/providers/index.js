@@ -2,19 +2,28 @@ const openai = require('./openai');
 const google = require('./google');
 const anthropic = require('./anthropic');
 const xai = require('./xai');
-
 const PROVIDERS = {
   openai,
   google,
   anthropic,
-  xai
+  xai,
+  
 };
 
 async function sendToProvider(provider, model, payload, opts = {}) {
   const p = (provider || 'openai').toLowerCase();
   const mod = PROVIDERS[p];
   if (!mod || typeof mod.send !== 'function') throw new Error('unsupported provider: ' + provider);
-  return await mod.send(model, payload, opts);
+  // Inject provider-specific defaults (e.g., Anthropic requires max_tokens)
+  try {
+    if (p === 'anthropic' && payload && (payload.max_tokens == null || payload.max_tokens === undefined)) {
+      const envMax = process.env.ANTHROPIC_MAX_TOKENS ? parseInt(process.env.ANTHROPIC_MAX_TOKENS, 10) : NaN;
+      if (Number.isFinite(envMax)) payload.max_tokens = envMax;
+    }
+  } catch (e) { /* ignore env parse errors */ }
+  const resp = await mod.send(model, payload, opts);
+  try { if (resp && typeof resp === 'object') resp._sent_payload = payload; } catch (e) { /* ignore */ }
+  return resp;
 }
 
 // Unified callProvider: delegate to provider-specific callProvider when available,
