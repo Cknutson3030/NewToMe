@@ -151,6 +151,106 @@ window.app = (function(){
   // Append a result row to the history table
   const appendResult = (body, duration) => {
     try {
+      // Client-side fallback: if server didn't populate `ai_parsed` or
+      // `ai_parsed_normalized` (common for some Claude responses), try to
+      // extract JSON from `ai_response.content` so the UI can still show
+      // the lifecycle table values.
+      try {
+        // Determine whether we need the client-side fallback: when `ai_parsed`
+        // is null/undefined OR when `ai_parsed_normalized` exists but contains
+        // no meaningful stage values (all null or zero). In those cases try
+        // extracting JSON from `ai_response.content` so the UI table can show.
+        const normalizedEmpty = (n) => {
+          try {
+            if (!n || typeof n !== 'object') return true;
+            const vals = Object.keys(n).map(k => n[k]);
+            if (!vals.length) return true;
+            return vals.every(v => v === null || v === 0);
+          } catch (e) { return false; }
+        };
+        const needFallback = (body.ai_parsed == null) || normalizedEmpty(body.ai_parsed_normalized);
+        if (needFallback && body.ai_response) {
+          let parsedCandidate = null;
+          const tryParseText = (txt) => {
+            if (!txt || typeof txt !== 'string') return null;
+            let s = txt.trim();
+            // raw JSON string
+            try { return JSON.parse(s); } catch (e) {}
+            // quoted JSON string like '"{...}"'
+            if (s.startsWith('"') && s.endsWith('"')) {
+              try { return JSON.parse(s.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')); } catch (e) {}
+            }
+            // find JSON substring
+            const first = s.indexOf('{'); const last = s.lastIndexOf('}');
+            if (first !== -1 && last !== -1 && last > first) {
+              const sub = s.slice(first, last + 1);
+              try { return JSON.parse(sub); } catch (e) {}
+            }
+            return null;
+          };
+
+          if (Array.isArray(body.ai_response.content)) {
+            for (const item of body.ai_response.content) {
+              if (!item) continue;
+              if (item.type === 'text' && typeof item.text === 'string') {
+                parsedCandidate = tryParseText(item.text);
+                if (parsedCandidate) break;
+              }
+              if (item.type === 'message' && Array.isArray(item.content)) {
+                for (const c of item.content) {
+                  if (!c) continue;
+                  if (c.type === 'text' && typeof c.text === 'string') {
+                    parsedCandidate = tryParseText(c.text);
+                    if (parsedCandidate) break;
+                  }
+                }
+                if (parsedCandidate) break;
+              }
+            }
+          }
+
+          // Also support `candidates` shapes (Gemini-like) if present
+          if (!parsedCandidate && Array.isArray(body.ai_response.candidates)) {
+            for (const cand of body.ai_response.candidates) {
+              if (!cand || !cand.content) continue;
+              const parts = (cand.content.parts && Array.isArray(cand.content.parts)) ? cand.content.parts : null;
+              if (parts) {
+                for (const p of parts) {
+                  const txt = (typeof p === 'string') ? p : (p.text || p.content || null);
+                  parsedCandidate = tryParseText(txt);
+                  if (parsedCandidate) break;
+                }
+              }
+              if (parsedCandidate) break;
+            }
+          }
+
+          if (parsedCandidate) {
+            // attach so getStageValue picks it up
+            body.ai_parsed = parsedCandidate;
+            // compute numeric normalized stage values and total so the
+            // cradle-to-grave column matches other providers
+            try {
+              const rmVal = getStageValue(body, 'raw_material_extraction');
+              const manuVal = getStageValue(body, 'manufacturing');
+              const transVal = getStageValue(body, 'transportation_distribution');
+              const usepVal = getStageValue(body, 'use_phase');
+              const eolVal = getStageValue(body, 'end_of_life');
+              const total = [rmVal, manuVal, transVal, usepVal, eolVal].reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
+              body.total = (Number.isFinite(total) ? total : body.total);
+              body.ai_parsed_normalized = Object.assign({}, body.ai_parsed_normalized || {}, {
+                raw_material_extraction: (typeof rmVal === 'number') ? rmVal : null,
+                manufacturing: (typeof manuVal === 'number') ? manuVal : null,
+                transportation_distribution: (typeof transVal === 'number') ? transVal : null,
+                use_phase: (typeof usepVal === 'number') ? usepVal : null,
+                end_of_life: (typeof eolVal === 'number') ? eolVal : null,
+                total: (Number.isFinite(total) ? total : null)
+              });
+            } catch (e) { /* best-effort only */ }
+          }
+        }
+      } catch (e) { /* best-effort parse only */ }
+
       const tr = document.createElement('tr');
       const rowNum = resultsBody.childElementCount + 1;
       const numTd = document.createElement('td'); numTd.textContent = rowNum.toString(); tr.appendChild(numTd);
