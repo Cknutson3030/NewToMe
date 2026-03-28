@@ -55,7 +55,9 @@ const EFFECTIVE_TEXT_VERBOSITY = normalizeVerbosity(DEFAULT_TEXT_VERBOSITY);
 const SLIM_RESPONSE = process.env.SLIM_RESPONSE === '1' || false;
 
 // Models that do NOT accept `reasoning` parameter in the Responses API payload
-const MODELS_WITHOUT_REASONING = ['gpt-4o','gpt-4o-mini'];
+// Add Grok v4 models here since xAI docs state `reasoning_effort` is not supported
+// by grok-4 and will error if included.
+const MODELS_WITHOUT_REASONING = ['gpt-4o','gpt-4o-mini','grok-4'];
 const modelSupportsReasoning = (modelId) => {
   if (!modelId || typeof modelId !== 'string') return false;
   for (const p of MODELS_WITHOUT_REASONING) if (modelId.startsWith(p)) return false;
@@ -114,14 +116,15 @@ const PROVIDER_MAP = {
     'Low reasoning / vision baseline': { provider: 'google', model: 'gemini-2.5-flash-lite' }
   },
   Claude: {
-    'claude-image-1': { provider: 'anthropic', model: 'claude-image-1' },
-    'claude-image-2': { provider: 'anthropic', model: 'claude-image-2' },
-    'claude-image-3': { provider: 'anthropic', model: 'claude-image-3' }
+    'Reasoning-focused': { provider: 'anthropic', model: 'claude-image-1' },
+    'Balanced (reasoning and vision)': { provider: 'anthropic', model: 'claude-image-2' },
+    'Low reasoning / vision baseline': { provider: 'anthropic', model: 'claude-image-3' }
   },
   Grok: {
-    'grok-image-1': { provider: 'xai', model: 'grok-image-1' },
-    'grok-image-2': { provider: 'xai', model: 'grok-image-2' },
-    'grok-image-3': { provider: 'xai', model: 'grok-image-3' }
+    'Reasoning-focused': { provider: 'xai', model: 'grok-4.20-0309-reasoning' },
+    'Balanced (reasoning and vision)': { provider: 'xai', model: 'grok-4-1-fast-reasoning' },
+    // Use a grok-4 non-reasoning variant available to this API key as baseline
+    'Low reasoning / vision baseline': { provider: 'xai', model: 'grok-4-1-fast-non-reasoning' }
   }
 };
 
