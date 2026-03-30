@@ -10,6 +10,7 @@ window.app = (function(){
   // summary elements removed from UI; history table shows structured outputs
   
   const resultsBody = document.getElementById('resultsBody');
+  const resultsTable = document.getElementById('resultsTable');
   const processingEl = document.getElementById('processingTimer');
   let _timerId = null;
   let _timerStart = null;
@@ -436,4 +437,46 @@ window.app = (function(){
     });
 
   return { onDrop, onDragOver, onFileChange, submit, clean, stop };
+})();
+
+// Export helper: download current results table as CSV (Excel-compatible)
+(function(){
+  // CSV escaping
+  function _csvEscape(val) {
+    if (val == null) return '';
+    const s = String(val);
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
+  // attach to app if available
+  try {
+    if (window.app && typeof window.app === 'object') {
+      window.app.exportTable = function exportTable() {
+        const table = document.getElementById('resultsTable');
+        if (!table) { alert('No results table found'); return; }
+
+        // headers
+        const headers = Array.from(table.querySelectorAll('thead th')).map(h => (h.textContent||'').trim());
+
+        // rows (tbody may have rows inserted at front)
+        const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => (td.textContent||'').trim()));
+
+        // build CSV
+        const lines = [];
+        lines.push(headers.map(_csvEscape).join(','));
+        for (const r of rows) lines.push(r.map(_csvEscape).join(','));
+
+        const csv = lines.join('\r\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ts = new Date().toISOString().replace(/[:.]/g,'-');
+        a.download = `ai-model-testing-results-${ts}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { try { document.body.removeChild(a); } catch(e){} URL.revokeObjectURL(url); }, 1000);
+      };
+    }
+  } catch (e) { /* non-fatal */ }
 })();
