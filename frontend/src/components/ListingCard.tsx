@@ -69,6 +69,24 @@ function ListingCard({ item, onPressMessage, onPressRequest, onPressEdit, isOwne
         <Text style={[styles.detailText, { fontWeight: '700', color: theme.colors.success }]}>{item.price != null ? `$${item.price}` : '—'}</Text>
         <Text style={styles.detailText}>{item.location_city}</Text>
       </View>
+      {!isOwner && (item.ghg_manufacturing_kg || item.ghg_materials_kg || item.ghg_transport_kg) ? (
+        <View style={styles.ghgBadge}>
+          <Text style={styles.ghgText}>
+            🌱 Saves {(
+              (Number(item.ghg_manufacturing_kg) || 0) +
+              (Number(item.ghg_materials_kg) || 0) +
+              (Number(item.ghg_transport_kg) || 0)
+            ).toFixed(1)} kg CO₂e vs. buying new
+          </Text>
+        </View>
+      ) : null}
+      {isOwner && item.ghg_end_of_life_kg ? (
+        <View style={styles.ghgBadge}>
+          <Text style={styles.ghgText}>
+            🌱 Saves {Number(item.ghg_end_of_life_kg).toFixed(1)} kg CO₂e vs. landfill
+          </Text>
+        </View>
+      ) : null}
     </Card>
   );
 }
@@ -97,6 +115,15 @@ const styles = StyleSheet.create({
   desc: { color: '#6B7280', marginBottom: 8 },
   detailsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   detailText: { fontSize: 13, color: '#374151' },
+  ghgBadge: {
+    marginTop: 6,
+    backgroundColor: '#F0FFF4',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+  },
+  ghgText: { fontSize: 12, color: '#065F46', fontWeight: '600' },
 });
 //reusable UI components
 

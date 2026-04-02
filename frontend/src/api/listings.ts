@@ -107,6 +107,36 @@ export async function uploadListingImages(listingId: string, formData: FormData)
   return res.json();
 }
 
+export async function analyzeImageForListing(imageUri: string, mimeType: string): Promise<{
+  product_name: string;
+  description: string;
+  category: string;
+  item_condition: string;
+  ghg: {
+    manufacturing_kg: number;
+    materials_kg: number;
+    transport_kg: number;
+    end_of_life_kg: number;
+  };
+}> {
+  const formData = new FormData();
+  formData.append('image', {
+    uri: imageUri,
+    name: 'photo.jpg',
+    type: mimeType || 'image/jpeg',
+  } as unknown as Blob);
+
+  const headers = authHeaders({ Accept: 'application/json' });
+  const res = await fetch(`${API_BASE_URL}/ai/analyze-image`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || `AI analysis failed: ${res.status}`);
+  return json.data;
+}
+
 export async function deleteListingImage(listingId: string, imageId: string) {
   const headers = authHeaders();
   const res = await fetch(`${API_BASE_URL}/listings/${listingId}/images/${imageId}`, {

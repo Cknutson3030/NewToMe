@@ -313,6 +313,7 @@ function ListingCardPlaceholderButtons({ navigation, signOut }: any) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('Conversations')}>Messages</Button>
+      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('Profile')}>Profile</Button>
       <Button variant="ghost" style={{ marginLeft: 8 }} onPress={signOut}>Sign Out</Button>
     </View>
   );

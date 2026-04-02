@@ -14,6 +14,7 @@ import ConversationsScreen from '../screens/ConversationsScreen';
 import ChatScreen from '../screens/ChatScreen';
 import PurchasesScreen from '../screens/PurchasesScreen';
 import OfferScreen from '../screens/OfferScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -43,6 +44,7 @@ export default function AppNavigator() {
             <Stack.Screen name="Offer" component={OfferScreen} options={{ title: 'Make an Offer' }} />
             <Stack.Screen name="Conversations" component={ConversationsScreen} options={{ title: 'Messages' }} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'My Profile' }} />
           </>
         ) : (
           // Not authenticated — show auth screens

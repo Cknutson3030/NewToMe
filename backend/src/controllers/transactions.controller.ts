@@ -69,6 +69,13 @@ export const respondTransaction: RequestHandler = async (req, res, next) => {
     if (txn.seller_id !== sellerId) throw new AppError(403, "Not your transaction");
     if (txn.status !== "pending") throw new AppError(400, "Transaction already processed");
 
+    // Get buyer id from transaction
+    const { data: fullTxn } = await supabaseAdmin
+      .from("transactions")
+      .select("buyer_id")
+      .eq("id", transactionId)
+      .single();
+
     // Update transaction status
     const { error: updateError } = await supabaseAdmin
       .from("transactions")
@@ -76,12 +83,44 @@ export const respondTransaction: RequestHandler = async (req, res, next) => {
       .eq("id", transactionId);
     if (updateError) throw updateError;
 
-    // If approved, mark listing as sold
+    // If approved, mark listing as sold and award GHG credits
     if (action === "approved") {
       await supabaseAdmin
         .from("listings")
         .update({ status: "sold" })
         .eq("id", txn.listing_id);
+
+      // Fetch listing GHG data to award credits
+      const { data: listing } = await supabaseAdmin
+        .from("listings")
+        .select("ghg_manufacturing_kg, ghg_materials_kg, ghg_transport_kg, ghg_end_of_life_kg")
+        .eq("id", txn.listing_id)
+        .single();
+
+      if (listing && fullTxn) {
+        const buyerCredit =
+          (Number(listing.ghg_manufacturing_kg) || 0) +
+          (Number(listing.ghg_materials_kg) || 0) +
+          (Number(listing.ghg_transport_kg) || 0);
+
+        const sellerCredit = Number(listing.ghg_end_of_life_kg) || 0;
+
+        // Award buyer credits (upsert profile row if missing)
+        if (buyerCredit > 0) {
+          await supabaseAdmin.rpc("increment_ghg_balance", {
+            user_id: fullTxn.buyer_id,
+            amount: buyerCredit,
+          });
+        }
+
+        // Award seller credits
+        if (sellerCredit > 0) {
+          await supabaseAdmin.rpc("increment_ghg_balance", {
+            user_id: sellerId,
+            amount: sellerCredit,
+          });
+        }
+      }
     }
     res.status(200).json({ success: true });
   } catch (error) {

@@ -12,6 +12,16 @@ const getAuthUserId = (req: AuthenticatedRequest): string => {
   return req.user.id;
 };
 
+// Fetches display names for a list of user IDs and returns a { userId: displayName } map.
+const fetchDisplayNames = async (userIds: string[]): Promise<Record<string, string | null>> => {
+  if (userIds.length === 0) return {};
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("id, display_name")
+    .in("id", userIds);
+  return Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p.display_name ?? null]));
+};
+
 // POST /conversations
 // Body: { listing_id }
 // Creates or returns the existing conversation between the authenticated buyer and the listing's seller.
@@ -43,20 +53,36 @@ export const getOrCreateConversation: RequestHandler = async (req, res, next) =>
       .eq("buyer_user_id", buyerId)
       .maybeSingle();
 
-    if (existing) {
-      res.status(200).json({ data: existing });
+    const conv = existing ?? (() => null)();
+
+    if (!conv) {
+      const { data: created, error: createError } = await supabaseAdmin
+        .from("conversations")
+        .insert({ listing_id, buyer_user_id: buyerId, seller_user_id: sellerId })
+        .select("*")
+        .single();
+
+      if (createError) throw createError;
+
+      const names = await fetchDisplayNames([buyerId, sellerId]);
+      res.status(201).json({
+        data: {
+          ...created,
+          buyer_display_name: names[buyerId] ?? null,
+          seller_display_name: names[sellerId] ?? null,
+        },
+      });
       return;
     }
 
-    const { data: created, error: createError } = await supabaseAdmin
-      .from("conversations")
-      .insert({ listing_id, buyer_user_id: buyerId, seller_user_id: sellerId })
-      .select("*")
-      .single();
-
-    if (createError) throw createError;
-
-    res.status(201).json({ data: created });
+    const names = await fetchDisplayNames([conv.buyer_user_id, conv.seller_user_id]);
+    res.status(200).json({
+      data: {
+        ...conv,
+        buyer_display_name: names[conv.buyer_user_id] ?? null,
+        seller_display_name: names[conv.seller_user_id] ?? null,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -88,6 +114,12 @@ export const listConversations: RequestHandler = async (req, res, next) => {
 
     if (error) throw error;
 
+    // Collect all unique participant IDs and fetch their display names
+    const allUserIds = [...new Set(
+      (data ?? []).flatMap((conv: any) => [conv.buyer_user_id, conv.seller_user_id])
+    )];
+    const nameMap = await fetchDisplayNames(allUserIds);
+
     // Attach only the latest message and compute has_unread for each conversation
     const result = (data ?? []).map((conv: any) => {
       const msgs: any[] = conv.messages ?? [];
@@ -102,7 +134,14 @@ export const listConversations: RequestHandler = async (req, res, next) => {
         lastMessage.sender_user_id !== userId &&
         (lastReadAt === null || new Date(lastMessage.created_at) > new Date(lastReadAt));
 
-      return { ...conv, messages: undefined, last_message: lastMessage, has_unread };
+      return {
+        ...conv,
+        messages: undefined,
+        last_message: lastMessage,
+        has_unread,
+        buyer_display_name: nameMap[conv.buyer_user_id] ?? null,
+        seller_display_name: nameMap[conv.seller_user_id] ?? null,
+      };
     });
 
     res.status(200).json({ data: result });
