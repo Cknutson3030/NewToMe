@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const fullUser = await fetchMe(data.session.access_token);
       setUser(fullUser);
     } else {
-      setUser({ id: data.user.id, email: data.user.email ?? '', display_name: null });
+      setUser({ id: data.user.id, email: data.user.email ?? '', display_name: null, ghg_balance: 0 });
     }
   };
 

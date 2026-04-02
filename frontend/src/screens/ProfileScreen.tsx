@@ -42,7 +42,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
           <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <Text style={[styles.label, { color: theme.colors.muted }]}>Email</Text>
-            <Text style={[styles.value, { color: theme.colors.text }]}>{user?.email}</Text>
+            <Text style={[styles.value, { color: '#111827' }]}>{user?.email}</Text>
           </View>
 
           <View style={[styles.card, styles.ghgCard]}>
