@@ -57,7 +57,7 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
               This name is shown to others in messages instead of "Buyer" or "Seller".
             </Text>
             <TextInput
-              style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text }]}
+              style={[styles.input, { borderColor: theme.colors.border, color: '#111827' }]}
               placeholder="Enter your name"
               value={displayName}
               onChangeText={setDisplayName}
