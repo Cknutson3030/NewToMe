@@ -10,6 +10,10 @@ const listingWriteFieldsSchema = z.object({
   item_condition: z.string().trim().min(1).max(120).optional(),
   location_city: z.string().trim().min(1).max(120).optional(),
   status: listingStatusSchema.optional(),
+  ghg_manufacturing_kg: z.coerce.number().min(0).optional(),
+  ghg_materials_kg: z.coerce.number().min(0).optional(),
+  ghg_transport_kg: z.coerce.number().min(0).optional(),
+  ghg_end_of_life_kg: z.coerce.number().min(0).optional(),
 });
 
 export const listingIdParamsSchema = z.object({

@@ -28,6 +28,10 @@ const LISTING_SELECT = `
   is_deleted,
   created_at,
   updated_at,
+  ghg_manufacturing_kg,
+  ghg_materials_kg,
+  ghg_transport_kg,
+  ghg_end_of_life_kg,
   listing_images (
     id,
     listing_id,
@@ -219,6 +223,10 @@ export const createListing: RequestHandler = async (req, res, next) => {
       item_condition: req.body.item_condition ?? null,
       location_city: req.body.location_city ?? null,
       status: req.body.status ?? "active",
+      ghg_manufacturing_kg: req.body.ghg_manufacturing_kg ?? null,
+      ghg_materials_kg: req.body.ghg_materials_kg ?? null,
+      ghg_transport_kg: req.body.ghg_transport_kg ?? null,
+      ghg_end_of_life_kg: req.body.ghg_end_of_life_kg ?? null,
     };
 
     const { data, error } = await supabaseAdmin
@@ -250,6 +258,10 @@ export const updateListing: RequestHandler = async (req, res, next) => {
       "item_condition",
       "location_city",
       "status",
+      "ghg_manufacturing_kg",
+      "ghg_materials_kg",
+      "ghg_transport_kg",
+      "ghg_end_of_life_kg",
     ] as const;
 
     const updates: Record<string, unknown> = {};

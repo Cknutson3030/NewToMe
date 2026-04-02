@@ -71,7 +71,9 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />}
           renderItem={({ item }) => {
             const isBuyer = item.buyer_user_id === user?.id;
-            const role = isBuyer ? 'Buyer' : 'Seller';
+            const otherName = isBuyer
+              ? (item.seller_display_name ?? 'Seller')
+              : (item.buyer_display_name ?? 'Buyer');
             const lastMsg = item.last_message;
             const hasUnread = item.has_unread;
             return (
@@ -91,7 +93,7 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
                     </View>
                   </View>
                   <View style={styles.cardBottom}>
-                    <Text style={styles.roleBadge}>{role}</Text>
+                    <Text style={styles.roleBadge}>{otherName}</Text>
                     {lastMsg ? (
                       <Text style={[styles.preview, hasUnread && styles.previewUnread]} numberOfLines={1}>
                         {lastMsg.sender_user_id === user?.id ? 'You: ' : ''}{lastMsg.body}

@@ -83,7 +83,9 @@ export default function ChatScreen({ route, navigation }: { route: any; navigati
   };
 
   const isBuyer = conversation.buyer_user_id === user?.id;
-  const otherLabel = isBuyer ? 'Seller' : 'Buyer';
+  const otherLabel = isBuyer
+    ? (conversation.seller_display_name ?? 'Seller')
+    : (conversation.buyer_display_name ?? 'Buyer');
 
   const renderMessage = ({ item, index }: { item: any; index: number }) => {
     const isMe = item.sender_user_id === user?.id;

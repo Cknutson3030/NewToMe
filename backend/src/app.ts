@@ -8,6 +8,7 @@ import { authRouter } from "./routes/auth.routes";
 import { listingsRouter } from "./routes/listings.routes";
 import { transactionsRouter } from "./routes/transactions.routes";
 import { chatRouter } from "./routes/chat.routes";
+import { aiRouter } from "./routes/ai.routes";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
 export const app = express();
@@ -23,6 +24,7 @@ app.use("/auth", authRouter);
 app.use("/listings", listingsRouter);
 app.use("/transactions", transactionsRouter);
 app.use("/conversations", chatRouter);
+app.use("/ai", aiRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

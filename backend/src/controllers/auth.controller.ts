@@ -147,7 +147,7 @@ export const refresh: RequestHandler = async (req, res, next) => {
 /**
  * GET /auth/me
  * Requires Authorization: Bearer <access_token>
- * Returns the current user.
+ * Returns the current user including display_name from profile.
  */
 export const me: RequestHandler = async (req, res, next) => {
   try {
@@ -164,14 +164,65 @@ export const me: RequestHandler = async (req, res, next) => {
       throw new AppError(401, "Invalid or expired token");
     }
 
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("display_name, ghg_balance")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
     res.status(200).json({
       data: {
         user: {
           id: data.user.id,
           email: data.user.email,
+          display_name: profile?.display_name ?? null,
+          ghg_balance: Number(profile?.ghg_balance ?? 0),
         },
       },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PATCH /auth/profile
+ * Requires Authorization: Bearer <access_token>
+ * Body: { display_name }
+ * Creates or updates the user's display name.
+ */
+export const updateProfile: RequestHandler = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader?.startsWith("Bearer ")) {
+      throw new AppError(401, "Missing or invalid Authorization header");
+    }
+
+    const token = authHeader.slice("Bearer ".length).trim();
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+
+    if (error || !data.user) {
+      throw new AppError(401, "Invalid or expired token");
+    }
+
+    const { display_name } = req.body as { display_name?: string };
+
+    if (!display_name || display_name.trim().length === 0) {
+      throw new AppError(400, "display_name is required");
+    }
+
+    if (display_name.trim().length > 100) {
+      throw new AppError(400, "display_name must be 100 characters or fewer");
+    }
+
+    const { error: upsertError } = await supabaseAdmin
+      .from("profiles")
+      .upsert({ id: data.user.id, display_name: display_name.trim() });
+
+    if (upsertError) throw upsertError;
+
+    res.status(200).json({ data: { display_name: display_name.trim() } });
   } catch (error) {
     next(error);
   }
