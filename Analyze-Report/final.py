@@ -330,7 +330,8 @@ def build_final_table(all_products):
     # Higher Final_Score is better now; rank descending (1 = best)
     final['Rank'] = final['Final_Score'].rank(method='min', ascending=False).astype(int)
     final = final.sort_values('Final_Score', ascending=False).reset_index(drop=True)
-
+    # rename averaged columns to make meaning explicit
+    final.rename(columns={'MAE': 'ave_MAE', 'SD': 'ave_SD'}, inplace=True)
     return final
 
 
@@ -339,10 +340,10 @@ def explanation_table():
         {"Column": "Model",
          "How it is Calculated": "Just the model name",
          "What it means": "Name of the LLM"},
-        {"Column": "MAE(Accuracy)",
+        {"Column": "ave_MAE (Accuracy)",
          "How it is Calculated": "Average of the absolute errors from the predictions in each product file",
          "What it means": "Average prediction error in kg CO₂e (per product true value used)"},
-        {"Column": "Prediction Stability (SD)",
+        {"Column": "ave_SD (Prediction Stability)",
          "How it is Calculated": "AVERAGE(SD across products)",
          "What it means": "Variation of predictions across samples/products"},
         {"Column": "Adjusted Accuracy",
