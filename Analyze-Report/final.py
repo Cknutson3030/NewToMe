@@ -305,24 +305,25 @@ def build_final_table(all_products):
         Avg_Cost=('Avg_Cost', 'mean')
     )
 
-    final['Adjusted_Accuracy'] = final['MAE'] + (LAMBDA * final['SD'])
+    # Mean-adjusted error: use per-model mean MAE and mean SD
+    final['Mean_Adjusted_MAE'] = final['MAE'] + (LAMBDA * final['SD'])
 
-    best_adj = final['Adjusted_Accuracy'].min()
+    best_adj = final['Mean_Adjusted_MAE'].min()
     fastest_time = final['Avg_Time'].min()
     cheapest_cost = final['Avg_Cost'].min()
 
     # Convert to benefit-style normalization: higher = better
-    # For metrics where lower is better (Adjusted_Accuracy, Avg_Time, Avg_Cost),
+    # For metrics where lower is better (Mean_Adjusted_MAE, Avg_Time, Avg_Cost),
     # compute normalized = baseline / value so the best model scores ~1 and others <= 1.
-    final['Norm_Adjusted_Accuracy'] = (best_adj + EPS) / (final['Adjusted_Accuracy'] + EPS)
+    final['Norm_Mean_Adjusted_MAE'] = (best_adj + EPS) / (final['Mean_Adjusted_MAE'] + EPS)
     final['Norm_Time'] = (fastest_time + EPS) / (final['Avg_Time'] + EPS)
     final['Norm_Cost'] = (cheapest_cost + EPS) / (final['Avg_Cost'] + EPS)
 
     final['Efficiency'] = final['MAE'] * final['Avg_Time'] * final['Avg_Cost']
 
-    # Final score weights: accuracy dominant (0.8), time (0.1), cost (0.1)
+    # Final score weights: error dominant (0.8), time (0.1), cost (0.1)
     final['Final_Score'] = (
-        0.8 * final['Norm_Adjusted_Accuracy'] +
+        0.8 * final['Norm_Mean_Adjusted_MAE'] +
         0.1 * final['Norm_Time'] +
         0.1 * final['Norm_Cost']
     )
@@ -330,8 +331,13 @@ def build_final_table(all_products):
     # Higher Final_Score is better now; rank descending (1 = best)
     final['Rank'] = final['Final_Score'].rank(method='min', ascending=False).astype(int)
     final = final.sort_values('Final_Score', ascending=False).reset_index(drop=True)
-    # rename averaged columns to make meaning explicit
-    final.rename(columns={'MAE': 'ave_MAE', 'SD': 'ave_SD'}, inplace=True)
+    # rename averaged columns to make meaning explicit and set friendly display names
+    final.rename(columns={
+        'MAE': 'ave_MAE',
+        'SD': 'ave_SD',
+        'Mean_Adjusted_MAE': 'Mean Adjusted MAE (kg CO₂e)',
+        'Norm_Mean_Adjusted_MAE': 'Norm. Mean Adjusted MAE'
+    }, inplace=True)
     return final
 
 
@@ -346,18 +352,18 @@ def explanation_table():
         {"Column": "ave_SD (Prediction Stability)",
          "How it is Calculated": "AVERAGE(SD across products)",
          "What it means": "Variation of predictions across samples/products"},
-        {"Column": "Adjusted Accuracy",
-         "How it is Calculated": "Adjusted Accuracy = MAE + (λ × SD); λ = 0.3",
-         "What it means": "Consider accuracy with variance (penalizes unstable models)"},
+        {"Column": "Mean Adjusted MAE (kg CO₂e)",
+         "How it is Calculated": "Mean Adjusted MAE = ave_MAE + (λ × ave_SD); λ = 0.3",
+         "What it means": "Mean absolute error penalized by prediction variance (lower is better)"},
         {"Column": "Avg Time (sec)(speed)",
          "How it is Calculated": "Average of the processing_ms column ÷ 1000 (converted to seconds)",
          "What it means": "How many seconds the model takes per prediction"},
         {"Column": "Avg Cost ($)",
          "How it is Calculated": "(Input Tokens × Input rate) + (Output Tokens × Output rate)",
          "What it means": "Average cost in US dollars per prediction"},
-        {"Column": "Norm. Adjusted Accuracy",
-         "How it is Calculated": "Best Adjusted Accuracy ÷ Model's Adjusted Accuracy (higher = better)",
-         "What it means": "Normalized accuracy where higher is better (1 = best)"},
+        {"Column": "Norm. Mean Adjusted MAE",
+         "How it is Calculated": "Best Mean Adjusted MAE ÷ Model's Mean Adjusted MAE (higher = better)",
+         "What it means": "Normalized error metric where higher = better (1 = best)"},
         {"Column": "Norm. Time",
          "How it is Calculated": "Fastest Avg Time ÷ Model's Avg Time (higher = better)",
          "What it means": "Normalized speed where higher is better (faster = higher)"},
