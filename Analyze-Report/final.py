@@ -22,6 +22,8 @@ an efficiency score, final score, and writes both CSV and XLSX outputs.
 BASE_DIR = os.path.join(os.path.dirname(__file__), "Python-Plot")
 LAMBDA = 0.3
 EPS = 1e-12
+# alpha for combining normalized adjusted-MAE and normalized RMSE (recommended 0.4-0.6)
+ALPHA = 0.6
 
 # Optional: set known ground-truth values here (keys must match folder names)
 TRUE_VALUES = {
@@ -223,12 +225,27 @@ def collect_product_summaries(base_dir):
         carbon_df[model_col] = carbon_df[model_col].astype(str).str.strip()
         carbon_df[pred_col] = pd.to_numeric(carbon_df[pred_col], errors='coerce')
         carbon_df = carbon_df.dropna(subset=[pred_col])
-        carbon_df['error'] = (carbon_df[pred_col] - float(true_value)).abs()
 
+        # compute residuals relative to true value (signed residual)
+        tv = float(true_value)
+        carbon_df['resid'] = carbon_df[pred_col] - tv
+        carbon_df['error'] = carbon_df['resid'].abs()
+        carbon_df['sq_err'] = carbon_df['resid'] ** 2
+
+        # per-model summary: MAE, RMSE, residual SD, and sample count
         carbon_summary = carbon_df.groupby(model_col).agg(
             MAE=('error', 'mean'),
-            SD=(pred_col, 'std')
+            RMSE=('sq_err', lambda s: np.sqrt(s.mean())),
+            SD_resid=('resid', 'std'),
+            count=(pred_col, 'size')
         ).reset_index().rename(columns={model_col: 'Model'})
+
+        # mean-adjusted MAE and normalized metrics (guard against zero true value)
+        den = tv if abs(tv) > EPS else EPS
+        carbon_summary['Mean_Adjusted_MAE'] = carbon_summary['MAE'] + (LAMBDA * carbon_summary['SD_resid'])
+        carbon_summary['norm_MAE'] = carbon_summary['MAE'] / (den)
+        carbon_summary['norm_RMSE'] = carbon_summary['RMSE'] / (den)
+        carbon_summary['norm_Mean_Adjusted'] = carbon_summary['Mean_Adjusted_MAE'] / (den)
 
         # prepare metrics summary
         # detect likely metric columns (prefer canonical names if present)
@@ -298,34 +315,41 @@ def build_final_table(all_products):
 
     all_data = pd.concat(all_products, ignore_index=True)
 
+    # Aggregate across products (simple mean per product since sample counts are equal)
     final = all_data.groupby('Model', as_index=False).agg(
-        MAE=('MAE', 'mean'),
-        SD=('SD', 'mean'),
+        ave_MAE=('MAE', 'mean'),
+        ave_RMSE=('RMSE', 'mean'),
+        ave_SD_resid=('SD_resid', 'mean'),
+        ave_Mean_Adjusted_MAE=('Mean_Adjusted_MAE', 'mean'),
+        ave_norm_mean_adjusted=('norm_Mean_Adjusted', 'mean'),
+        ave_norm_RMSE=('norm_RMSE', 'mean'),
         Avg_Time=('Avg_Time', 'mean'),
-        Avg_Cost=('Avg_Cost', 'mean')
+        Avg_Cost=('Avg_Cost', 'mean'),
+        total_count=('count', 'sum')
     )
 
-    # Mean-adjusted error: use per-model mean MAE and mean SD
-    final['Mean_Adjusted_MAE'] = final['MAE'] + (LAMBDA * final['SD'])
-
-    best_adj = final['Mean_Adjusted_MAE'].min()
+    # For normalized measures lower is better; convert to benefit (higher is better)
+    best_norm_adj = final['ave_norm_mean_adjusted'].min()
+    best_norm_rmse = final['ave_norm_RMSE'].min()
     fastest_time = final['Avg_Time'].min()
     cheapest_cost = final['Avg_Cost'].min()
 
-    # Convert to benefit-style normalization: higher = better
-    # For metrics where lower is better (Mean_Adjusted_MAE, Avg_Time, Avg_Cost),
-    # compute normalized = baseline / value so the best model scores ~1 and others <= 1.
-    final['Norm_Mean_Adjusted_MAE'] = (best_adj + EPS) / (final['Mean_Adjusted_MAE'] + EPS)
+    final['S_adj'] = (best_norm_adj + EPS) / (final['ave_norm_mean_adjusted'] + EPS)
+    final['S_rmse'] = (best_norm_rmse + EPS) / (final['ave_norm_RMSE'] + EPS)
+
+    # combine adjusted-MAE and RMSE into a single error score
+    final['S_err'] = ALPHA * final['S_adj'] + (1.0 - ALPHA) * final['S_rmse']
+
     final['Norm_Time'] = (fastest_time + EPS) / (final['Avg_Time'] + EPS)
     final['Norm_Cost'] = (cheapest_cost + EPS) / (final['Avg_Cost'] + EPS)
 
-    final['Efficiency'] = final['MAE'] * final['Avg_Time'] * final['Avg_Cost']
+    final['Efficiency'] = final['ave_MAE'] * final['Avg_Time'] * final['Avg_Cost']
 
-    # Final score weights: error dominant (0.8), time (0.1), cost (0.1)
+    # Final score weights: error dominant (0.8), time (0.15), cost (0.05)
     final['Final_Score'] = (
-        0.8 * final['Norm_Mean_Adjusted_MAE'] +
-        0.1 * final['Norm_Time'] +
-        0.1 * final['Norm_Cost']
+        0.8 * final['S_err'] +
+        0.15 * final['Norm_Time'] +
+        0.05 * final['Norm_Cost']
     )
 
     # Higher Final_Score is better now; rank descending (1 = best)
@@ -333,10 +357,12 @@ def build_final_table(all_products):
     final = final.sort_values('Final_Score', ascending=False).reset_index(drop=True)
     # rename averaged columns to make meaning explicit and set friendly display names
     final.rename(columns={
-        'MAE': 'ave_MAE',
-        'SD': 'ave_SD',
-        'Mean_Adjusted_MAE': 'Mean Adjusted MAE (kg CO₂e)',
-        'Norm_Mean_Adjusted_MAE': 'Norm. Mean Adjusted MAE'
+        'ave_MAE': 'ave_MAE',
+        'ave_RMSE': 'ave_RMSE',
+        'ave_SD_resid': 'ave_SD',
+        'ave_Mean_Adjusted_MAE': 'Mean Adjusted MAE (kg CO₂e)',
+        'ave_norm_mean_adjusted': 'Norm. Mean Adjusted MAE',
+        'ave_norm_RMSE': 'Norm. RMSE'
     }, inplace=True)
     return final
 
@@ -349,12 +375,15 @@ def explanation_table():
         {"Column": "ave_MAE (Accuracy)",
          "How it is Calculated": "Average of the absolute errors from the predictions in each product file",
          "What it means": "Average prediction error in kg CO₂e (per product true value used)"},
+        {"Column": "ave_RMSE (Large-error sensitivity)",
+         "How it is Calculated": "Root mean square error across sample residuals (sensitive to large mistakes)",
+         "What it means": "Typical magnitude of errors with emphasis on large deviations"},
         {"Column": "ave_SD (Prediction Stability)",
-         "How it is Calculated": "AVERAGE(SD across products)",
-         "What it means": "Variation of predictions across samples/products"},
+         "How it is Calculated": "AVERAGE(std of residuals across products) — std(prediction - true)",
+         "What it means": "Variation of model residuals around the truth (higher = less stable)"},
         {"Column": "Mean Adjusted MAE (kg CO₂e)",
-         "How it is Calculated": "Mean Adjusted MAE = ave_MAE + (λ × ave_SD); λ = 0.3",
-         "What it means": "Mean absolute error penalized by prediction variance (lower is better)"},
+         "How it is Calculated": "Mean Adjusted MAE = ave_MAE + (λ × ave_SD_resid); λ = 0.3",
+         "What it means": "MAE penalized by residual variance (lower is better)"},
         {"Column": "Avg Time (sec)(speed)",
          "How it is Calculated": "Average of the processing_ms column ÷ 1000 (converted to seconds)",
          "What it means": "How many seconds the model takes per prediction"},
@@ -362,8 +391,20 @@ def explanation_table():
          "How it is Calculated": "(Input Tokens × Input rate) + (Output Tokens × Output rate)",
          "What it means": "Average cost in US dollars per prediction"},
         {"Column": "Norm. Mean Adjusted MAE",
-         "How it is Calculated": "Best Mean Adjusted MAE ÷ Model's Mean Adjusted MAE (higher = better)",
-         "What it means": "Normalized error metric where higher = better (1 = best)"},
+         "How it is Calculated": "Mean Adjusted MAE ÷ product true value (normalized per product) then averaged across products",
+         "What it means": "Scale-invariant adjusted error used to compute S_adj (lower = better)"},
+        {"Column": "Norm. RMSE",
+         "How it is Calculated": "RMSE ÷ product true value (normalized per product) then averaged across products",
+         "What it means": "Scale-invariant RMSE used to compute S_rmse (lower = better)"},
+        {"Column": "S_adj (error score from adjusted MAE)",
+         "How it is Calculated": "best(ave_norm_mean_adjusted) ÷ model's ave_norm_mean_adjusted (higher = better)",
+         "What it means": "Benefit-style score derived from normalized adjusted MAE (1 = best)"},
+        {"Column": "S_rmse (error score from RMSE)",
+         "How it is Calculated": "best(ave_norm_RMSE) ÷ model's ave_norm_RMSE (higher = better)",
+         "What it means": "Benefit-style score derived from normalized RMSE (1 = best)"},
+        {"Column": "S_err (Combined error)",
+         "How it is Calculated": "S_err = ALPHA × S_adj + (1-ALPHA) × S_rmse (ALPHA default 0.5)",
+         "What it means": "Combined error score balancing typical and large-error sensitivity (higher = better)"},
         {"Column": "Norm. Time",
          "How it is Calculated": "Fastest Avg Time ÷ Model's Avg Time (higher = better)",
          "What it means": "Normalized speed where higher is better (faster = higher)"},
@@ -374,8 +415,8 @@ def explanation_table():
          "How it is Calculated": "Avg MAE × Avg Time × Avg Cost",
          "What it means": "Overall real-world cost combining error, latency, and monetary cost"},
         {"Column": "Final Score",
-         "How it is Calculated": "0.8 × Norm. Adjusted Accuracy + 0.1 × Norm. Time + 0.1 × Norm. Cost",
-         "What it means": "Combined final performance score (higher = better)"},
+         "How it is Calculated": "0.8 × S_err + 0.15 × Norm. Time + 0.05 × Norm. Cost",
+         "What it means": "Combined final performance score using combined error, speed and cost (higher = better)"},
         {"Column": "Rank",
          "How it is Calculated": "Ordering by Final Score (highest = best)",
          "What it means": "Final ranking of models (1 = best)"}
