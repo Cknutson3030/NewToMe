@@ -240,12 +240,16 @@ def collect_product_summaries(base_dir):
             count=(pred_col, 'size')
         ).reset_index().rename(columns={model_col: 'Model'})
 
-        # mean-adjusted MAE and normalized metrics (guard against zero true value)
+        # adjusted MAE/RMSE and normalized metrics (guard against zero true value)
         den = tv if abs(tv) > EPS else EPS
-        carbon_summary['Mean_Adjusted_MAE'] = carbon_summary['MAE'] + (LAMBDA * carbon_summary['SD_resid'])
-        carbon_summary['norm_MAE'] = carbon_summary['MAE'] / (den)
-        carbon_summary['norm_RMSE'] = carbon_summary['RMSE'] / (den)
-        carbon_summary['norm_Mean_Adjusted'] = carbon_summary['Mean_Adjusted_MAE'] / (den)
+        # Adjusted MAE: MAE penalized by residual variability
+        carbon_summary['Adjusted_MAE'] = carbon_summary['MAE'] + (LAMBDA * carbon_summary['SD_resid'])
+        # Adjusted RMSE: combine RMSE and SD_resid in quadrature to penalize variability
+        carbon_summary['Adjusted_RMSE'] = np.sqrt(carbon_summary['RMSE'] ** 2 + (LAMBDA * carbon_summary['SD_resid']) ** 2)
+        carbon_summary['norm_MAE'] = carbon_summary['MAE'] / den
+        carbon_summary['norm_RMSE'] = carbon_summary['RMSE'] / den
+        carbon_summary['norm_Adjusted_MAE'] = carbon_summary['Adjusted_MAE'] / den
+        carbon_summary['norm_Adjusted_RMSE'] = carbon_summary['Adjusted_RMSE'] / den
 
         # prepare metrics summary
         # detect likely metric columns (prefer canonical names if present)
@@ -320,8 +324,10 @@ def build_final_table(all_products):
         ave_MAE=('MAE', 'mean'),
         ave_RMSE=('RMSE', 'mean'),
         ave_SD_resid=('SD_resid', 'mean'),
-        ave_Mean_Adjusted_MAE=('Mean_Adjusted_MAE', 'mean'),
-        ave_norm_mean_adjusted=('norm_Mean_Adjusted', 'mean'),
+        ave_Adjusted_MAE=('Adjusted_MAE', 'mean'),
+        ave_norm_Adjusted_MAE=('norm_Adjusted_MAE', 'mean'),
+        ave_Adjusted_RMSE=('Adjusted_RMSE', 'mean'),
+        ave_norm_Adjusted_RMSE=('norm_Adjusted_RMSE', 'mean'),
         ave_norm_RMSE=('norm_RMSE', 'mean'),
         Avg_Time=('Avg_Time', 'mean'),
         Avg_Cost=('Avg_Cost', 'mean'),
@@ -329,13 +335,13 @@ def build_final_table(all_products):
     )
 
     # For normalized measures lower is better; convert to benefit (higher is better)
-    best_norm_adj = final['ave_norm_mean_adjusted'].min()
-    best_norm_rmse = final['ave_norm_RMSE'].min()
+    best_norm_adj = final['ave_norm_Adjusted_MAE'].min()
+    best_norm_rmse = final['ave_norm_Adjusted_RMSE'].min()
     fastest_time = final['Avg_Time'].min()
     cheapest_cost = final['Avg_Cost'].min()
 
-    final['S_adj'] = (best_norm_adj + EPS) / (final['ave_norm_mean_adjusted'] + EPS)
-    final['S_rmse'] = (best_norm_rmse + EPS) / (final['ave_norm_RMSE'] + EPS)
+    final['S_adj'] = (best_norm_adj + EPS) / (final['ave_norm_Adjusted_MAE'] + EPS)
+    final['S_rmse'] = (best_norm_rmse + EPS) / (final['ave_norm_Adjusted_RMSE'] + EPS)
 
     # combine adjusted-MAE and RMSE into a single error score
     final['S_err'] = ALPHA * final['S_adj'] + (1.0 - ALPHA) * final['S_rmse']
@@ -360,8 +366,10 @@ def build_final_table(all_products):
         'ave_MAE': 'ave_MAE',
         'ave_RMSE': 'ave_RMSE',
         'ave_SD_resid': 'ave_SD',
-        'ave_Mean_Adjusted_MAE': 'Mean Adjusted MAE (kg CO₂e)',
-        'ave_norm_mean_adjusted': 'Norm. Mean Adjusted MAE',
+        'ave_Adjusted_MAE': 'Adjusted MAE (kg CO₂e)',
+        'ave_norm_Adjusted_MAE': 'Norm. Adjusted MAE',
+        'ave_Adjusted_RMSE': 'Adjusted RMSE (kg CO₂e)',
+        'ave_norm_Adjusted_RMSE': 'Norm. Adjusted RMSE',
         'ave_norm_RMSE': 'Norm. RMSE'
     }, inplace=True)
     return final
@@ -381,29 +389,32 @@ def explanation_table():
         {"Column": "ave_SD (Prediction Stability)",
          "How it is Calculated": "AVERAGE(std of residuals across products) — std(prediction - true)",
          "What it means": "Variation of model residuals around the truth (higher = less stable)"},
-        {"Column": "Mean Adjusted MAE (kg CO₂e)",
-         "How it is Calculated": "Mean Adjusted MAE = ave_MAE + (λ × ave_SD_resid); λ = 0.3",
+        {"Column": "Adjusted MAE (kg CO₂e)",
+         "How it is Calculated": "Adjusted MAE = MAE + (λ × SD_resid); λ = 0.3",
          "What it means": "MAE penalized by residual variance (lower is better)"},
+        {"Column": "Adjusted RMSE (kg CO₂e)",
+         "How it is Calculated": "Adjusted RMSE = sqrt(RMSE**2 + (λ × SD_resid)**2); λ = 0.3",
+         "What it means": "RMSE penalized by residual variance (lower is better)"},
         {"Column": "Avg Time (sec)(speed)",
          "How it is Calculated": "Average of the processing_ms column ÷ 1000 (converted to seconds)",
          "What it means": "How many seconds the model takes per prediction"},
         {"Column": "Avg Cost ($)",
          "How it is Calculated": "(Input Tokens × Input rate) + (Output Tokens × Output rate)",
          "What it means": "Average cost in US dollars per prediction"},
-        {"Column": "Norm. Mean Adjusted MAE",
-         "How it is Calculated": "Mean Adjusted MAE ÷ product true value (normalized per product) then averaged across products",
+        {"Column": "Norm. Adjusted MAE",
+         "How it is Calculated": "Adjusted MAE ÷ product true value (normalized per product) then averaged across products",
          "What it means": "Scale-invariant adjusted error used to compute S_adj (lower = better)"},
-        {"Column": "Norm. RMSE",
-         "How it is Calculated": "RMSE ÷ product true value (normalized per product) then averaged across products",
-         "What it means": "Scale-invariant RMSE used to compute S_rmse (lower = better)"},
+        {"Column": "Norm. Adjusted RMSE",
+         "How it is Calculated": "Adjusted RMSE ÷ product true value (normalized per product) then averaged across products",
+         "What it means": "Scale-invariant adjusted RMSE used to compute S_rmse (lower = better)"},
         {"Column": "S_adj (error score from adjusted MAE)",
-         "How it is Calculated": "best(ave_norm_mean_adjusted) ÷ model's ave_norm_mean_adjusted (higher = better)",
-         "What it means": "Benefit-style score derived from normalized adjusted MAE (1 = best)"},
-        {"Column": "S_rmse (error score from RMSE)",
-         "How it is Calculated": "best(ave_norm_RMSE) ÷ model's ave_norm_RMSE (higher = better)",
-         "What it means": "Benefit-style score derived from normalized RMSE (1 = best)"},
+         "How it is Calculated": "best(ave_norm_Adjusted_MAE) ÷ model's ave_norm_Adjusted_MAE (higher = better)",
+         "What it means": "Benefit-style score derived from normalized Adjusted MAE (1 = best)"},
+        {"Column": "S_rmse (error score from adjusted RMSE)",
+         "How it is Calculated": "best(ave_norm_Adjusted_RMSE) ÷ model's ave_norm_Adjusted_RMSE (higher = better)",
+         "What it means": "Benefit-style score derived from normalized Adjusted RMSE (1 = best)"},
         {"Column": "S_err (Combined error)",
-         "How it is Calculated": "S_err = ALPHA × S_adj + (1-ALPHA) × S_rmse (ALPHA default 0.5)",
+         "How it is Calculated": "S_err = ALPHA × S_adj + (1-ALPHA) × S_rmse (ALPHA default 0.6)",
          "What it means": "Combined error score balancing typical and large-error sensitivity (higher = better)"},
         {"Column": "Norm. Time",
          "How it is Calculated": "Fastest Avg Time ÷ Model's Avg Time (higher = better)",
