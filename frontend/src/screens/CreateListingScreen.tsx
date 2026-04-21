@@ -129,9 +129,9 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()} disabled={Platform.OS === 'web'}>
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-            <Text style={styles.sectionLabel}>Photos</Text>
+<Text style={styles.sectionLabel}>Photos</Text>
             <View style={styles.photoRow}>
               {images.map((img, idx) => (
                 <Image key={idx} source={{ uri: img.uri }} style={styles.photo} />

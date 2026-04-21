@@ -1,5 +1,6 @@
 //npx expo start uses .env.development
 // with EAS build, it uses .env.production
+import { Platform } from 'react-native';
 export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   "https://newtomesask-bjc6bseke7a4edaz.canadacentral-01.azurewebsites.net";
@@ -120,11 +121,17 @@ export async function analyzeImageForListing(imageUri: string, mimeType: string)
   };
 }> {
   const formData = new FormData();
-  formData.append('image', {
-    uri: imageUri,
-    name: 'photo.jpg',
-    type: mimeType || 'image/jpeg',
-  } as unknown as Blob);
+  if (Platform.OS === 'web') {
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+    formData.append('image', blob, 'photo.jpg');
+  } else {
+    formData.append('image', {
+      uri: imageUri,
+      name: 'photo.jpg',
+      type: mimeType || 'image/jpeg',
+    } as unknown as Blob);
+  }
 
   const headers = authHeaders({ Accept: 'application/json' });
   const res = await fetch(`${API_BASE_URL}/ai/analyze-image`, {
