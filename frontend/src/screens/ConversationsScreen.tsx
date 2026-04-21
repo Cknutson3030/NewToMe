@@ -1,21 +1,21 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, Pressable,
-  ActivityIndicator, Alert, RefreshControl,
+  Alert, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { listConversations } from '../api/chat';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../theme/ThemeProvider';
-import Card from '../components/ui/Card';
+import { Card, Skeleton } from '../components/ui';
 
 export default function ConversationsScreen({ navigation }: { navigation: any }) {
   const { user } = useAuth();
+  const { theme } = useTheme();
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const { theme } = useTheme();
 
   const fetchConversations = useCallback(async () => {
     setLoading(true);
@@ -32,7 +32,7 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
   useFocusEffect(
     useCallback(() => {
       fetchConversations();
-    }, [fetchConversations])
+    }, [fetchConversations]),
   );
 
   const onRefresh = useCallback(async () => {
@@ -56,19 +56,37 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
     return d.toLocaleDateString();
   };
 
+  const styles = makeStyles(theme);
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <Text style={[styles.title, theme.typography.h1]}>Messages</Text>
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.topBar}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={10}>
+          <Text style={styles.backArrow}>←</Text>
+        </Pressable>
+        <Text style={styles.topTitle}>Messages</Text>
+        <View style={{ width: 24 }} />
       </View>
 
       {loading && !refreshing ? (
-        <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
+        <View style={{ padding: 16 }}>
+          <Skeleton style={{ height: 76, borderRadius: 16, marginBottom: 12 }} />
+          <Skeleton style={{ height: 76, borderRadius: 16, marginBottom: 12 }} />
+          <Skeleton style={{ height: 76, borderRadius: 16 }} />
+        </View>
       ) : (
         <FlatList
           data={conversations}
           keyExtractor={(item) => item.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />}
+          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colors.primary}
+              colors={[theme.colors.primary]}
+            />
+          }
           renderItem={({ item }) => {
             const isBuyer = item.buyer_user_id === user?.id;
             const otherName = isBuyer
@@ -76,38 +94,51 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
               : (item.buyer_display_name ?? 'Buyer');
             const lastMsg = item.last_message;
             const hasUnread = item.has_unread;
+            const avatarLetter = (otherName || '?')[0].toUpperCase();
             return (
               <Pressable onPress={() => navigation.navigate('Chat', { conversation: item })}>
-                <Card style={[styles.card, hasUnread ? { backgroundColor: '#F0F7FF', borderColor: '#BFDBFE' } : {}]}>
-                  <View style={styles.cardTop}>
-                    <Text style={[styles.listingTitle, hasUnread && styles.textUnread]} numberOfLines={1}>
-                      {item.listings?.title ?? 'Listing'}
-                    </Text>
-                    <View style={styles.cardTopRight}>
+                <Card style={{ marginBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={[styles.avatar, hasUnread && { backgroundColor: theme.colors.primary }]}>
+                    <Text style={[styles.avatarText, hasUnread && { color: '#FFFFFF' }]}>{avatarLetter}</Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <View style={styles.rowTop}>
+                      <Text style={[styles.name, hasUnread && styles.nameUnread]} numberOfLines={1}>
+                        {otherName}
+                      </Text>
                       {lastMsg && (
                         <Text style={[styles.time, hasUnread && styles.timeUnread]}>
                           {formatTime(lastMsg.created_at)}
                         </Text>
                       )}
+                    </View>
+                    <Text style={styles.listingTitle} numberOfLines={1}>
+                      {item.listings?.title ?? 'Listing'}
+                    </Text>
+                    <View style={styles.rowBottom}>
+                      {lastMsg ? (
+                        <Text style={[styles.preview, hasUnread && styles.previewUnread]} numberOfLines={1}>
+                          {lastMsg.sender_user_id === user?.id ? 'You: ' : ''}{lastMsg.body}
+                        </Text>
+                      ) : (
+                        <Text style={styles.noMessages}>No messages yet</Text>
+                      )}
                       {hasUnread && <View style={styles.unreadDot} />}
                     </View>
-                  </View>
-                  <View style={styles.cardBottom}>
-                    <Text style={styles.roleBadge}>{otherName}</Text>
-                    {lastMsg ? (
-                      <Text style={[styles.preview, hasUnread && styles.previewUnread]} numberOfLines={1}>
-                        {lastMsg.sender_user_id === user?.id ? 'You: ' : ''}{lastMsg.body}
-                      </Text>
-                    ) : (
-                      <Text style={styles.noMessages}>No messages yet</Text>
-                    )}
                   </View>
                 </Card>
               </Pressable>
             );
           }}
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: theme.colors.muted }]}>No conversations yet.{'\n'}Tap "Message Seller" on any listing to start one.</Text>
+            <View style={{ alignItems: 'center', marginTop: 60 }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.colors.text, marginBottom: 6 }}>
+                No conversations yet
+              </Text>
+              <Text style={{ fontSize: 14, color: theme.colors.muted, textAlign: 'center', paddingHorizontal: 32 }}>
+                Tap "Message seller" on any listing to start one.
+              </Text>
+            </View>
           }
         />
       )}
@@ -115,53 +146,40 @@ export default function ConversationsScreen({ navigation }: { navigation: any })
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7F8FA' },
-  header: {
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  title: { fontSize: 28, fontWeight: '700' },
-  loader: { marginTop: 40 },
-  card: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  cardUnread: {
-    borderColor: '#BFDBFE',
-    backgroundColor: '#F0F7FF',
-  },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  cardTopRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  listingTitle: { fontSize: 16, fontWeight: '700', flex: 1, marginRight: 8 },
-  textUnread: { color: '#1D4ED8' },
-  time: { fontSize: 12, color: '#9CA3AF' },
-  timeUnread: { color: '#2563EB', fontWeight: '600' },
-  unreadDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#2563EB',
-  },
-  cardBottom: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  roleBadge: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2563EB',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  preview: { fontSize: 14, color: '#6B7280', flex: 1 },
-  previewUnread: { color: '#111827', fontWeight: '600' },
-  noMessages: { fontSize: 14, color: '#9CA3AF', fontStyle: 'italic' },
-  empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 40, fontSize: 15, lineHeight: 24, paddingHorizontal: 32 },
-});
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: theme.colors.background },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+    },
+    backArrow: { fontSize: 24, color: theme.colors.text },
+    topTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text },
+
+    avatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: theme.colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarText: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
+
+    rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    name: { fontSize: 15, fontWeight: '700', color: theme.colors.text, flex: 1, marginRight: 8 },
+    nameUnread: { color: theme.colors.primary },
+    time: { fontSize: 11, color: theme.colors.muted },
+    timeUnread: { color: theme.colors.primary, fontWeight: '700' },
+
+    listingTitle: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
+
+    rowBottom: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+    preview: { fontSize: 13, color: theme.colors.muted, flex: 1 },
+    previewUnread: { color: theme.colors.text, fontWeight: '600' },
+    noMessages: { fontSize: 13, color: theme.colors.muted, fontStyle: 'italic', flex: 1 },
+    unreadDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: theme.colors.primary, marginLeft: 8 },
+  });

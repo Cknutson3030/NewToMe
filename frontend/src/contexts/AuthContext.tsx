@@ -8,6 +8,7 @@ interface AuthUser {
   email: string;
   display_name: string | null;
   ghg_balance: number;
+  wallet_balance: number;
 }
 
 interface AuthContextType {
@@ -18,6 +19,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   updateProfile: (displayName: string) => Promise<{ error: Error | null }>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -58,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const fullUser = await fetchMe(data.session.access_token);
       setUser(fullUser);
     } else {
-      setUser({ id: data.user.id, email: data.user.email ?? '', display_name: null, ghg_balance: 0 });
+      setUser({ id: data.user.id, email: data.user.email ?? '', display_name: null, ghg_balance: 0, wallet_balance: 0 });
     }
   };
 
@@ -124,6 +126,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearSession();
   }, [accessToken]);
 
+  const refreshUser = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const fullUser = await fetchMe(accessToken);
+      setUser(fullUser);
+    } catch {
+      // best-effort
+    }
+  }, [accessToken]);
+
   const updateProfile = useCallback(async (displayName: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/auth/profile`, {
@@ -149,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [accessToken]);
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, loading, signUp, signIn, signOut, updateProfile }}>
+    <AuthContext.Provider value={{ user, accessToken, loading, signUp, signIn, signOut, updateProfile, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

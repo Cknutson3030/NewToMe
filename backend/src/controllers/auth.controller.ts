@@ -25,6 +25,13 @@ export const signup: RequestHandler = async (req, res, next) => {
       throw new AppError(400, error.message);
     }
 
+    await supabaseAdmin
+      .from("profiles")
+      .upsert(
+        { id: data.user.id, wallet_balance: 1000 },
+        { onConflict: "id", ignoreDuplicates: true },
+      );
+
     // Sign the user in immediately so we can return a session
     // Use supabaseAnon so we don't contaminate supabaseAdmin's in-memory session
     const { data: signInData, error: signInError } =
@@ -166,7 +173,7 @@ export const me: RequestHandler = async (req, res, next) => {
 
     const { data: profile } = await supabaseAdmin
       .from("profiles")
-      .select("display_name, ghg_balance")
+      .select("display_name, ghg_balance, wallet_balance")
       .eq("id", data.user.id)
       .maybeSingle();
 
@@ -177,6 +184,7 @@ export const me: RequestHandler = async (req, res, next) => {
           email: data.user.email,
           display_name: profile?.display_name ?? null,
           ghg_balance: Number(profile?.ghg_balance ?? 0),
+          wallet_balance: Number(profile?.wallet_balance ?? 0),
         },
       },
     });

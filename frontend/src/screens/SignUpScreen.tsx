@@ -5,7 +5,6 @@ import {
   TextInput,
   StyleSheet,
   Alert,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -27,12 +26,10 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
-
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
       return;
@@ -44,7 +41,6 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
       if (error) {
         Alert.alert('Sign Up Failed', error.message);
       } else {
-        // Session is set automatically — navigator will switch to Home
         Alert.alert('Welcome!', 'Your account has been created.');
       }
     } catch (err: any) {
@@ -54,6 +50,8 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
     }
   };
 
+  const styles = makeStyles(theme.colors);
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -61,16 +59,21 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
     >
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.headerSection}>
-          <Text style={[styles.appName, { color: theme.colors.primary }]}>NewToMe</Text>
+          <View style={styles.logoMark}>
+            <Text style={styles.logoMarkText}>N</Text>
+          </View>
+          <Text style={[styles.appName, { color: theme.colors.text }]}>NewToMe</Text>
           <Text style={[styles.subtitle, { color: theme.colors.muted }]}>Create your account</Text>
         </View>
 
-        <Card style={[styles.formSection, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-          <Text style={[theme.typography.h2, { marginBottom: 12, color: '#111827' }]}>Sign Up</Text>
+        <Card variant="outlined" padding="lg" style={styles.formSection}>
+          <Text style={[theme.typography.h2, { marginBottom: 16 }]}>Sign up</Text>
 
+          <Text style={styles.label}>Email</Text>
           <TextInput
             style={styles.input}
-            placeholder="Email"
+            placeholder="you@example.com"
+            placeholderTextColor={theme.colors.muted}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -79,9 +82,11 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
             autoComplete="email"
           />
 
+          <Text style={styles.label}>Password</Text>
           <TextInput
             style={styles.input}
-            placeholder="Password (min 6 characters)"
+            placeholder="At least 6 characters"
+            placeholderTextColor={theme.colors.muted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -89,9 +94,11 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
             autoComplete="new-password"
           />
 
+          <Text style={styles.label}>Confirm password</Text>
           <TextInput
             style={styles.input}
-            placeholder="Confirm Password"
+            placeholder="Repeat your password"
+            placeholderTextColor={theme.colors.muted}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry
@@ -99,11 +106,15 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
             autoComplete="new-password"
           />
 
-          <Button onPress={handleSignUp}>{loading ? 'Creating...' : 'Sign Up'}</Button>
+          <Button size="lg" fullWidth onPress={handleSignUp} style={{ marginTop: 16 }} disabled={loading}>
+            {loading ? 'Creating…' : 'Create account'}
+          </Button>
 
           <View style={styles.footer}>
             <Text style={[styles.footerText, { color: theme.colors.muted }]}>Already have an account? </Text>
-            <Text onPress={() => navigation.navigate('Login')} style={[styles.linkText, { color: theme.colors.primary }]}>Log In</Text>
+            <Text onPress={() => navigation.navigate('Login')} style={[styles.linkText, { color: theme.colors.primary }]}>
+              Log in
+            </Text>
           </View>
         </Card>
       </ScrollView>
@@ -111,82 +122,45 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7F8FA',
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  headerSection: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  appName: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#2563EB',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  formSection: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  formTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 20,
-    color: '#111827',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 14,
-    fontSize: 16,
-    backgroundColor: '#F9FAFB',
-  },
-  button: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
-  footerText: {
-    color: '#6B7280',
-    fontSize: 14,
-  },
-  linkText: {
-    color: '#2563EB',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    container: { flex: 1 },
+    scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+    headerSection: { alignItems: 'center', marginBottom: 32 },
+    logoMark: {
+      width: 64,
+      height: 64,
+      borderRadius: 18,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 12,
+    },
+    logoMarkText: { color: '#FFFFFF', fontSize: 28, fontWeight: '800' },
+    appName: { fontSize: 32, fontWeight: '800', letterSpacing: -0.5 },
+    subtitle: { fontSize: 15, marginTop: 4 },
+    formSection: { backgroundColor: colors.surface },
+    label: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: colors.muted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: 6,
+      marginTop: 8,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: colors.text,
+      backgroundColor: colors.surface,
+      marginBottom: 6,
+    },
+    footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 18 },
+    footerText: { fontSize: 14 },
+    linkText: { fontSize: 14, fontWeight: '700' },
+  });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import { View, Text, Image, StyleSheet, Pressable } from 'react-native';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import { useTheme } from '../theme/ThemeProvider';
@@ -10,127 +10,179 @@ type Props = {
   onPressRequest?: (item: any) => void;
   onPressEdit?: (item: any) => void;
   isOwner?: boolean;
-  loadingAction?: boolean;
   requested?: boolean;
-  /** 'translucent' (default), 'solid', or 'blur' (requires @react-native-community/blur) */
-  overlayStyle?: 'translucent' | 'solid' | 'blur';
 };
 
-function ListingCard({ item, onPressMessage, onPressRequest, onPressEdit, isOwner, loadingAction, requested }: Props) {
+function ListingCard({ item, onPressMessage, onPressRequest, onPressEdit, isOwner, requested }: Props) {
   const { theme } = useTheme();
-  const windowWidth = Dimensions.get('window').width;
-  const compact = windowWidth < 360;
-  const firstImage = item.listing_images?.sort?.((a: any,b: any)=>a.sort_order-b.sort_order)?.[0];
-  const overlayMode = (item?.overlayStyle as any) || (undefined as any) || 'translucent';
-  // compute a sensible overlay color based on theme and mode
-  let overlayColor = 'rgba(255,255,255,0.96)';
-  if (overlayMode === 'solid') {
-    overlayColor = theme.colors.surface || '#FFFFFF';
-  } else if (overlayMode === 'translucent') {
-    // light theme -> semi-white, dark theme -> semi-black
-    const bg = (theme && theme.colors && theme.colors.background) || '';
-    const isDark = typeof bg === 'string' && (bg.startsWith('#') ? (bg === '#000000' || bg === '#000') : false);
-    overlayColor = isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.96)';
-  }
-  let BlurView: any = null;
-  if ((item?.overlayStyle as any) === 'blur' || overlayMode === 'blur') {
-    try {
-      // optional dependency - will fail gracefully if not installed
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      BlurView = require('@react-native-community/blur').BlurView;
-    } catch (err) {
-      BlurView = null;
-    }
-  }
+  const firstImage = item.listing_images?.sort?.((a: any, b: any) => a.sort_order - b.sort_order)?.[0];
+  const imageUrl = firstImage?.image_url ?? item.listing_image_url;
+
+  const ghgSaved = isOwner
+    ? Number(item.ghg_end_of_life_kg) || 0
+    : (Number(item.ghg_manufacturing_kg) || 0) +
+      (Number(item.ghg_materials_kg) || 0) +
+      (Number(item.ghg_transport_kg) || 0);
+
+  const styles = makeStyles(theme);
+
   return (
-    <Card style={{ marginBottom: theme.spacing.sm }}>
-      <View style={styles.imageWrapper}>
-        {firstImage?.image_url ? (
-          <Image source={{ uri: firstImage.image_url }} style={styles.image} />
+    <Card padding="none" style={styles.card}>
+      <View style={styles.imageWrap}>
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={styles.image} />
+        ) : (
+          <View style={[styles.image, styles.imagePlaceholder]}>
+            <Text style={styles.placeholderText}>No image</Text>
+          </View>
+        )}
+        {item.item_condition ? (
+          <View style={styles.conditionBadge}>
+            <Text style={styles.conditionBadgeText}>{item.item_condition}</Text>
+          </View>
         ) : null}
       </View>
 
-      <View style={[styles.actionsContainer, { backgroundColor: overlayColor }] } pointerEvents="box-none">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsRow}>
+      <View style={styles.body}>
+        <View style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
+          <Text style={styles.price}>{item.price != null ? `$${item.price}` : '—'}</Text>
+        </View>
+
+        {item.description ? (
+          <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
+        ) : null}
+
+        <View style={styles.metaRow}>
+          {item.location_city ? (
+            <Text style={styles.meta} numberOfLines={1}>📍 {item.location_city}</Text>
+          ) : null}
+        </View>
+
+        {ghgSaved > 0 ? (
+          <View style={styles.ghgBadge}>
+            <Text style={styles.ghgText}>
+              🌱 Saves {ghgSaved.toFixed(1)} kg CO₂e {isOwner ? 'vs. landfill' : 'vs. new'}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={styles.actionsRow}>
           {isOwner ? (
-            <Button variant="ghost" onPress={() => onPressEdit?.(item)} style={[styles.actionBtn, compact ? styles.actionBtnCompact : null]}>Edit</Button>
+            <Button variant="secondary" size="sm" style={styles.action} onPress={() => onPressEdit?.(item)}>
+              Edit
+            </Button>
           ) : (
             <>
-              <Button style={[styles.actionBtn, compact ? styles.actionBtnCompact : null, { marginRight: 8 }]} onPress={() => onPressMessage?.(item.id)}>Message</Button>
-              <Button style={[styles.actionBtn, compact ? styles.actionBtnCompact : null]} onPress={() => onPressRequest?.(item)}>{requested ? 'Requested' : 'Request'}</Button>
+              <Button variant="ghost" size="sm" style={styles.action} onPress={() => onPressMessage?.(item.id)}>
+                Message
+              </Button>
+              <Button size="sm" style={styles.action} onPress={() => onPressRequest?.(item)}>
+                {requested ? 'Requested' : 'Make offer'}
+              </Button>
             </>
           )}
-        </ScrollView>
-      </View>
-
-      <Text style={[styles.title, theme.typography.body]}>{item.title}</Text>
-      {item.description ? <Text style={[styles.desc, theme.typography.small]} numberOfLines={2}>{item.description}</Text> : null}
-      <View style={styles.detailsRow}>
-        <Text style={[styles.detailText, { fontWeight: '700', color: theme.colors.success }]}>{item.price != null ? `$${item.price}` : '—'}</Text>
-        <Text style={styles.detailText}>{item.location_city}</Text>
-      </View>
-      {!isOwner && (item.ghg_manufacturing_kg || item.ghg_materials_kg || item.ghg_transport_kg) ? (
-        <View style={styles.ghgBadge}>
-          <Text style={styles.ghgText}>
-            🌱 Saves {(
-              (Number(item.ghg_manufacturing_kg) || 0) +
-              (Number(item.ghg_materials_kg) || 0) +
-              (Number(item.ghg_transport_kg) || 0)
-            ).toFixed(1)} kg CO₂e vs. buying new
-          </Text>
         </View>
-      ) : null}
-      {isOwner && item.ghg_end_of_life_kg ? (
-        <View style={styles.ghgBadge}>
-          <Text style={styles.ghgText}>
-            🌱 Saves {Number(item.ghg_end_of_life_kg).toFixed(1)} kg CO₂e vs. landfill
-          </Text>
-        </View>
-      ) : null}
+      </View>
     </Card>
   );
 }
 
-const styles = StyleSheet.create({
-  imageWrapper: { position: 'relative' },
-  image: { width: '100%', height: 160, borderRadius: 8, marginBottom: 8, backgroundColor: '#E5E7EB' },
-  actionsContainer: {
-    // container below image for actions
-    alignSelf: 'stretch',
-    paddingHorizontal: 6,
-    borderRadius: 12,
-    marginBottom: 8,
-    // elevation / shadow for container
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 3,
-    overflow: 'hidden',
-  },
-  actionsRow: { alignItems: 'center', paddingVertical: 6 },
-  actionBtn: { minWidth: 88, paddingVertical: 10 },
-  actionBtnCompact: { minWidth: 72, paddingVertical: 8 },
-  title: { fontSize: 18, fontWeight: '700', marginBottom: 6 },
-  desc: { color: '#6B7280', marginBottom: 8 },
-  detailsRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  detailText: { fontSize: 13, color: '#374151' },
-  ghgBadge: {
-    marginTop: 6,
-    backgroundColor: '#F0FFF4',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    alignSelf: 'flex-start',
-  },
-  ghgText: { fontSize: 12, color: '#065F46', fontWeight: '600' },
-});
-//reusable UI components
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    card: {
+      marginBottom: theme.spacing.md,
+      overflow: 'hidden',
+    },
+    imageWrap: {
+      position: 'relative',
+      backgroundColor: theme.colors.surfaceAlt,
+    },
+    image: {
+      width: '100%',
+      height: 220,
+    },
+    imagePlaceholder: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    placeholderText: {
+      color: theme.colors.muted,
+      fontSize: 14,
+    },
+    conditionBadge: {
+      position: 'absolute',
+      top: 12,
+      left: 12,
+      backgroundColor: 'rgba(17,17,17,0.8)',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: theme.radii.pill,
+    },
+    conditionBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '600',
+      textTransform: 'capitalize',
+    },
+    body: { padding: 14 },
+    titleRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4,
+    },
+    title: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: theme.colors.text,
+      flex: 1,
+      marginRight: 8,
+    },
+    price: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: theme.colors.primary,
+    },
+    desc: {
+      fontSize: 14,
+      color: theme.colors.muted,
+      marginBottom: 8,
+    },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    meta: {
+      fontSize: 13,
+      color: theme.colors.muted,
+    },
+    ghgBadge: {
+      backgroundColor: theme.colors.primarySoft,
+      borderRadius: theme.radii.pill,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      alignSelf: 'flex-start',
+      marginBottom: 10,
+    },
+    ghgText: {
+      fontSize: 12,
+      color: theme.colors.primary,
+      fontWeight: '600',
+    },
+    actionsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 2,
+    },
+    action: { flex: 1 },
+  });
 
 export default React.memo(ListingCard, (prev, next) => {
-  // avoid re-render unless essential props change
-  const sameId = prev.item?.id === next.item?.id;
-  const sameOwner = prev.isOwner === next.isOwner;
-  const sameRequested = prev.requested === next.requested;
-  return sameId && sameOwner && sameRequested;
+  return (
+    prev.item?.id === next.item?.id &&
+    prev.isOwner === next.isOwner &&
+    prev.requested === next.requested
+  );
 });

@@ -1,12 +1,23 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getListings } from '../api/listings';
-import Button from '../components/ui/Button';
 import { getOrCreateConversation } from '../api/chat';
-import { requestTransaction } from '../api/transactions';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../theme/ThemeProvider';
+import Button from '../components/ui/Button';
 import ListingCard from '../components/ListingCard';
 
 type Listing = {
@@ -22,127 +33,91 @@ type Listing = {
   item_condition?: string;
 };
 
+const CONDITIONS = ['', 'new', 'like_new', 'good', 'fair'];
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { signOut, user } = useAuth();
   const { theme } = useTheme();
-  const [messagingListingId, setMessagingListingId] = useState<string | null>(null);
 
-  const handleMessageSeller = useCallback(async (listingId: string) => {
-    setMessagingListingId(listingId);
-    try {
-      const conversation = await getOrCreateConversation(listingId);
-      navigation.navigate('Chat', { conversation });
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not open conversation');
-    } finally {
-      setMessagingListingId(null);
-    }
-  }, [navigation]);
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // filters
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
   const [itemCondition, setItemCondition] = useState('');
   const [locationCity, setLocationCity] = useState('');
-  const [sortBy, setSortBy] = useState<'created_at'|'price'|'title'>('created_at');
-  const [sortOrder, setSortOrder] = useState<'asc'|'desc'>('desc');
-  const [limit, setLimit] = useState<string>(''); // keep as string so editing doesn't coerce to number
-  const [offset, setOffset] = useState<number>(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [sortBy, setSortBy] = useState<'created_at' | 'price' | 'title'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [offset, setOffset] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   const debounceRef = useRef<any>(null);
+  const limit = 20;
 
-  // Fetch listings on component mount
-  useEffect(() => {
-    fetchListings();
-  }, []);
+  const buildParams = useCallback(() => {
+    const p: Record<string, any> = {};
+    if (q) p.q = q;
+    if (category) p.category = category;
+    if (minPrice) p.min_price = minPrice;
+    if (maxPrice) p.max_price = maxPrice;
+    if (itemCondition) p.item_condition = itemCondition;
+    if (locationCity) p.location_city = locationCity;
+    p.sort_by = sortBy;
+    p.sort_order = sortOrder;
+    p.limit = limit;
+    return p;
+  }, [q, category, minPrice, maxPrice, itemCondition, locationCity, sortBy, sortOrder]);
 
-  const fetchListings = async (params?: Record<string, any>, append = false) => {
-    if (append) setLoadingMore(true); else setLoading(true);
+  const fetchListings = useCallback(async (append = false) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     try {
-      const p: Record<string, any> = { ...(params || {}) };
-      if (limit !== '' && limit !== null && limit !== undefined) p.limit = Number(limit);
-      p.offset = append ? offset : 0;
-      p.sort_by = sortBy;
-      p.sort_order = sortOrder;
-
-      const res = await getListings(p);
-      const allData = Array.isArray(res) ? res : res.data || [];
-      // Exclude current user's own listings (they appear in My Listings)
-      const data = (user?.id ? allData.filter((item: any) => item.owner_user_id !== user.id) : allData) as Listing[];
+      const params = buildParams();
+      params.offset = append ? offset : 0;
+      const res = await getListings(params);
+      const all = Array.isArray(res) ? res : res.data || [];
+      const filtered = (user?.id ? all.filter((i: any) => i.owner_user_id !== user.id) : all) as Listing[];
 
       if (append) {
-        setListings((prev: Listing[]) => [...prev, ...data]);
-        setOffset((prev) => prev + data.length);
+        setListings((prev) => [...prev, ...filtered]);
+        setOffset((prev) => prev + filtered.length);
       } else {
-        setListings(data);
-        setOffset(data.length);
+        setListings(filtered);
+        setOffset(filtered.length);
       }
-
-      setHasMore(data.length === (Number(limit) || 20));
+      setHasMore(filtered.length === limit);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to fetch listings');
     } finally {
       setLoading(false);
       setLoadingMore(false);
-    }
-  };
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      setOffset(0);
-      const params: Record<string, any> = {};
-      if (q) params.q = q;
-      if (category) params.category = category;
-      if (minPrice) params.min_price = minPrice;
-      if (maxPrice) params.max_price = maxPrice;
-      if (itemCondition) params.item_condition = itemCondition;
-      if (locationCity) params.location_city = locationCity;
-      params.sort_by = sortBy;
-      params.sort_order = sortOrder;
-      const res = await getListings(params);
-      const allData = Array.isArray(res) ? res : res.data || [];
-      const data = (user?.id ? allData.filter((item: any) => item.owner_user_id !== user.id) : allData) as Listing[];
-      setListings(data);
-      setOffset(data.length);
-      setHasMore(data.length === (Number(limit) || 20));
-    } catch (err) {
-      Alert.alert('Error', 'Failed to refresh listings');
-    } finally {
       setRefreshing(false);
     }
-  }, [q, category, minPrice, maxPrice, itemCondition, locationCity, sortBy, sortOrder, limit]);
+  }, [buildParams, offset, user?.id]);
 
-  // debounce filters
+  useEffect(() => { fetchListings(false); }, []);
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const params: Record<string, any> = {};
-      if (q) params.q = q;
-      if (category) params.category = category;
-      if (minPrice) params.min_price = minPrice;
-      if (maxPrice) params.max_price = maxPrice;
-      if (itemCondition) params.item_condition = itemCondition;
-      if (locationCity) params.location_city = locationCity;
-      params.sort_by = sortBy;
-      params.sort_order = sortOrder;
-      fetchListings(params, false);
-    }, 500);
+    debounceRef.current = setTimeout(() => fetchListings(false), 450);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [q, category, minPrice, maxPrice, itemCondition, locationCity, sortBy, sortOrder, limit]);
+  }, [q, category, minPrice, maxPrice, itemCondition, locationCity, sortBy, sortOrder]);
 
-  // Request-to-buy state
-  const [requestedIds, setRequestedIds] = useState<string[]>([]);
-  const [requestingId, setRequestingId] = useState<string | null>(null);
+  const onRefresh = () => { setRefreshing(true); fetchListings(false); };
 
-  const handleEdit = useCallback((it: any) => navigation.navigate('EditListing', { listing: it }), [navigation]);
+  const handleMessage = useCallback(async (listingId: string) => {
+    try {
+      const conversation = await getOrCreateConversation(listingId);
+      navigation.navigate('Chat', { conversation });
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not open conversation');
+    }
+  }, [navigation]);
 
   const handleRequestBuy = useCallback((item: any) => {
     navigation.navigate('Offer', {
@@ -155,176 +130,350 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     });
   }, [navigation]);
 
-  // Render UI
+  const clearFilters = () => {
+    setCategory('');
+    setMinPrice('');
+    setMaxPrice('');
+    setItemCondition('');
+    setLocationCity('');
+    setSortBy('created_at');
+    setSortOrder('desc');
+  };
+
+  const activeFilterCount =
+    (category ? 1 : 0) +
+    (minPrice ? 1 : 0) +
+    (maxPrice ? 1 : 0) +
+    (itemCondition ? 1 : 0) +
+    (locationCity ? 1 : 0);
+
+  const styles = makeStyles(theme);
+
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}>
-      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }] }>
-        <Text style={[styles.title, theme.typography.h1, { flexShrink: 1 }]}>Listings</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 8 }}>
-          <ListingCardPlaceholderButtons navigation={navigation} signOut={signOut} />
-        </ScrollView>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Discover</Text>
+          <Text style={styles.greetingSub}>Find your next pre-loved find</Text>
+        </View>
+        <Pressable onPress={() => navigation.navigate('Profile')} style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {user?.display_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? '?'}
+          </Text>
+        </Pressable>
       </View>
 
-      {/* Filters / Search */}
-      <View style={styles.filtersContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search listings..."
-          value={q}
-          onChangeText={setQ}
-          returnKeyType="search"
-        />
-        <View style={styles.filterRow}>
-          <TextInput style={styles.smallInput} placeholder="Category" value={category} onChangeText={setCategory} />
-          <TextInput style={styles.smallInput} placeholder="Condition" value={itemCondition} onChangeText={setItemCondition} />
-          <TextInput style={styles.smallInput} placeholder="City" value={locationCity} onChangeText={setLocationCity} />
+      <View style={styles.searchRow}>
+        <View style={styles.searchInput}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchField}
+            placeholder="Search items, brands, keywords…"
+            placeholderTextColor={theme.colors.muted}
+            value={q}
+            onChangeText={setQ}
+            returnKeyType="search"
+          />
         </View>
-        <View style={[styles.filterRow, { marginTop: 8 }]}> 
-          <TextInput style={styles.smallInput} placeholder="Min $" keyboardType="numeric" value={minPrice} onChangeText={setMinPrice} />
-          <TextInput style={styles.smallInput} placeholder="Max $" keyboardType="numeric" value={maxPrice} onChangeText={setMaxPrice} />
-          <TextInput style={styles.smallInput} placeholder="Limit" keyboardType="numeric" value={limit} onChangeText={setLimit} />
-        </View>
-        <View style={[styles.filterRow, { marginTop: 8, alignItems: 'center' }]}> 
-          <Button variant="ghost" style={styles.sortButton} onPress={() => setSortBy(sortBy === 'created_at' ? 'price' : sortBy === 'price' ? 'title' : 'created_at')}>Sort: {sortBy}</Button>
-          <Button variant="ghost" style={styles.sortButton} onPress={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}>Order: {sortOrder}</Button>
-          <Button onPress={() => fetchListings({ q, category, item_condition: itemCondition, location_city: locationCity, min_price: minPrice, max_price: maxPrice, sort_by: sortBy, sort_order: sortOrder }, false)}>Apply</Button>
-        </View>
+        <Pressable onPress={() => setFiltersOpen(true)} style={styles.filterButton}>
+          <Text style={styles.filterButtonText}>Filters</Text>
+          {activeFilterCount > 0 && (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+            </View>
+          )}
+        </Pressable>
       </View>
-
-      {/* health check removed */}
 
       {loading && !refreshing ? (
-        <ActivityIndicator size="large" color="#2563EB" style={styles.loader} />
+        <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
       ) : (
         <FlatList
           data={listings}
-          keyExtractor={(item, index) =>
-            String(item?.id ?? item?._id ?? `${item?.title ?? 'listing'}-${index}`)
-          }
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
-          }
+          keyExtractor={(item, index) => String(item?.id ?? item?._id ?? `${item?.title ?? 'listing'}-${index}`)}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} colors={[theme.colors.primary]} />}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.listContent, { paddingBottom: 140 }]}
+          contentContainerStyle={styles.listContent}
           onEndReachedThreshold={0.5}
-          onEndReached={() => {
-            if (!loadingMore && hasMore) {
-              const params: Record<string, any> = {};
-              if (q) params.q = q;
-              if (category) params.category = category;
-              if (minPrice) params.min_price = minPrice;
-              if (maxPrice) params.max_price = maxPrice;
-              if (itemCondition) params.item_condition = itemCondition;
-              if (locationCity) params.location_city = locationCity;
-              params.sort_by = sortBy;
-              params.sort_order = sortOrder;
-              fetchListings(params, true);
-            }
-          }}
-          ListFooterComponent={loadingMore ? <ActivityIndicator style={{margin:12}} /> : null}
+          onEndReached={() => { if (!loadingMore && hasMore) fetchListings(true); }}
+          ListFooterComponent={loadingMore ? <ActivityIndicator style={{ margin: 16 }} color={theme.colors.primary} /> : null}
           renderItem={({ item }) => {
             const isOwner = user?.id === item.owner_user_id;
             return (
               <ListingCard
                 item={item}
                 isOwner={isOwner}
-                onPressEdit={handleEdit}
-                onPressMessage={handleMessageSeller}
+                onPressMessage={handleMessage}
                 onPressRequest={handleRequestBuy}
-                requested={item.id ? requestedIds.includes(item.id) : false}
               />
             );
           }}
-          ListEmptyComponent={<Text style={[styles.empty, { color: theme.colors.muted }]}>No listings yet.</Text>}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>Nothing here yet</Text>
+              <Text style={styles.emptyBody}>Try adjusting filters or check back soon.</Text>
+            </View>
+          }
         />
-        )}
+      )}
 
-      <View style={[styles.bottomBar, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }] }>
-        <BottomNavButtons navigation={navigation} />
+      <View style={styles.tabBar}>
+        <TabButton label="Browse" icon="🏠" active onPress={() => {}} />
+        <TabButton label="Listings" icon="📦" onPress={() => navigation.navigate('MyListings')} />
+        <TabPrimaryButton onPress={() => navigation.navigate('CreateListing')} />
+        <TabButton label="Messages" icon="💬" onPress={() => navigation.navigate('Conversations')} />
+        <TabButton label="Purchases" icon="🛍" onPress={() => navigation.navigate('Purchases')} />
       </View>
 
-      </KeyboardAvoidingView>
+      <FiltersSheet
+        visible={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        category={category} setCategory={setCategory}
+        minPrice={minPrice} setMinPrice={setMinPrice}
+        maxPrice={maxPrice} setMaxPrice={setMaxPrice}
+        itemCondition={itemCondition} setItemCondition={setItemCondition}
+        locationCity={locationCity} setLocationCity={setLocationCity}
+        sortBy={sortBy} setSortBy={setSortBy}
+        sortOrder={sortOrder} setSortOrder={setSortOrder}
+        onClear={clearFilters}
+        theme={theme}
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-  },
-  title: { fontSize: 28, fontWeight: '700' },
-  actionButton: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  actionButtonText: { color: '#fff', fontWeight: '600' },
-  loader: { flex: 1, justifyContent: 'center' },
-  listContent: { padding: 16, paddingBottom: 24 },
-  listCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  listImage: {
-    width: '100%',
-    height: 180,
-    backgroundColor: '#E5E7EB',
-  },
-  listTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6, paddingHorizontal: 14, paddingTop: 12 },
-  listDesc: { fontSize: 14, color: '#6B7280', marginBottom: 8, paddingHorizontal: 14 },
-  details: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6, gap: 12, paddingHorizontal: 14, paddingBottom: 4 },
-  detailText: { fontSize: 13, color: '#374151' },
-  editButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginHorizontal: 14,
-    marginTop: 8,
-    marginBottom: 14,
-    alignItems: 'center',
-  },
-  editButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  filtersContainer: { padding: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  searchInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 8, marginBottom: 8, backgroundColor: '#fff' },
-  filterRow: { flexDirection: 'row', gap: 8 },
-  smallInput: { flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 8, backgroundColor: '#fff' },
-  sortButton: { backgroundColor: '#F3F4F6', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, marginRight: 8 },
-  sortButtonText: { color: '#111827', fontWeight: '600' },
-  empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 24, fontSize: 16 },
-  bottomBar: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 12,
-    borderRadius: 12,
-    padding: 8,
-    borderWidth: 1,
-  },
-});
-
-function ListingCardPlaceholderButtons({ navigation, signOut }: any) {
+function TabButton({ label, icon, active, onPress }: { label: string; icon: string; active?: boolean; onPress: () => void }) {
+  const { theme } = useTheme();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('Conversations')}>Messages</Button>
-      <Button variant="ghost" style={{ marginRight: 8 }} onPress={() => navigation.navigate('Profile')}>Profile</Button>
-      <Button variant="ghost" style={{ marginLeft: 8 }} onPress={signOut}>Sign Out</Button>
-    </View>
+    <Pressable onPress={onPress} style={{ flex: 1, alignItems: 'center', paddingVertical: 6 }}>
+      <Text style={{ fontSize: 20, opacity: active ? 1 : 0.55 }}>{icon}</Text>
+      <Text style={{ fontSize: 11, fontWeight: '600', marginTop: 2, color: active ? theme.colors.primary : theme.colors.muted }}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
-function BottomNavButtons({ navigation }: any) {
+function TabPrimaryButton({ onPress }: { onPress: () => void }) {
+  const { theme } = useTheme();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' }}>
-      <Button variant="ghost" onPress={() => navigation.navigate('MyListings')}>My Listings</Button>
-      <Button onPress={() => navigation.navigate('CreateListing')}>+ New</Button>
-      <Button variant="ghost" onPress={() => navigation.navigate('Purchases')}>Purchases</Button>
-    </View>
+    <Pressable onPress={onPress} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+      <View style={{
+        width: 54,
+        height: 54,
+        borderRadius: 27,
+        backgroundColor: theme.colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: -16,
+        shadowColor: theme.colors.primary,
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 6,
+      }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 28, fontWeight: '300', lineHeight: 30 }}>+</Text>
+      </View>
+    </Pressable>
   );
 }
+
+function FiltersSheet({
+  visible, onClose,
+  category, setCategory,
+  minPrice, setMinPrice, maxPrice, setMaxPrice,
+  itemCondition, setItemCondition,
+  locationCity, setLocationCity,
+  sortBy, setSortBy, sortOrder, setSortOrder,
+  onClear, theme,
+}: any) {
+  const styles = makeStyles(theme);
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose} />
+      <View style={styles.modalSheet}>
+        <View style={styles.sheetHandle} />
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>Filters</Text>
+          <Pressable onPress={onClear}><Text style={styles.clearText}>Clear all</Text></Pressable>
+        </View>
+
+        <ScrollView style={{ maxHeight: '100%' }}>
+          <Text style={styles.sheetLabel}>Category</Text>
+          <TextInput style={styles.sheetInput} placeholder="e.g. Electronics" placeholderTextColor={theme.colors.muted} value={category} onChangeText={setCategory} />
+
+          <Text style={styles.sheetLabel}>Location</Text>
+          <TextInput style={styles.sheetInput} placeholder="City" placeholderTextColor={theme.colors.muted} value={locationCity} onChangeText={setLocationCity} />
+
+          <Text style={styles.sheetLabel}>Price range</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TextInput style={[styles.sheetInput, { flex: 1 }]} placeholder="Min $" placeholderTextColor={theme.colors.muted} keyboardType="numeric" value={minPrice} onChangeText={setMinPrice} />
+            <TextInput style={[styles.sheetInput, { flex: 1 }]} placeholder="Max $" placeholderTextColor={theme.colors.muted} keyboardType="numeric" value={maxPrice} onChangeText={setMaxPrice} />
+          </View>
+
+          <Text style={styles.sheetLabel}>Condition</Text>
+          <View style={styles.chipRow}>
+            {CONDITIONS.map((c) => (
+              <Pressable key={c || 'any'} onPress={() => setItemCondition(c)}
+                style={[styles.chip, itemCondition === c && styles.chipActive]}>
+                <Text style={[styles.chipText, itemCondition === c && styles.chipTextActive]}>
+                  {c ? c.replace('_', ' ') : 'Any'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.sheetLabel}>Sort by</Text>
+          <View style={styles.chipRow}>
+            {(['created_at', 'price', 'title'] as const).map((s) => (
+              <Pressable key={s} onPress={() => setSortBy(s)} style={[styles.chip, sortBy === s && styles.chipActive]}>
+                <Text style={[styles.chipText, sortBy === s && styles.chipTextActive]}>
+                  {s === 'created_at' ? 'Newest' : s.charAt(0).toUpperCase() + s.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')} style={[styles.chip]}>
+              <Text style={styles.chipText}>{sortOrder === 'asc' ? '↑ Asc' : '↓ Desc'}</Text>
+            </Pressable>
+          </View>
+
+          <Button size="lg" fullWidth onPress={onClose} style={{ marginTop: 20, marginBottom: 24 }}>
+            Apply
+          </Button>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: theme.colors.background },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 12,
+    },
+    greeting: { fontSize: 26, fontWeight: '800', color: theme.colors.text, letterSpacing: -0.5 },
+    greetingSub: { fontSize: 14, color: theme.colors.muted, marginTop: 2 },
+    avatar: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: theme.colors.primarySoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarText: { color: theme.colors.primary, fontWeight: '700', fontSize: 16 },
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingBottom: 12,
+      gap: 8,
+    },
+    searchInput: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.surfaceAlt,
+      borderRadius: theme.radii.lg,
+      paddingHorizontal: 14,
+      height: 46,
+    },
+    searchIcon: { fontSize: 15, marginRight: 8 },
+    searchField: { flex: 1, fontSize: 15, color: theme.colors.text },
+    filterButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 14,
+      height: 46,
+      backgroundColor: theme.colors.surfaceAlt,
+      borderRadius: theme.radii.lg,
+    },
+    filterButtonText: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
+    filterBadge: {
+      marginLeft: 6,
+      minWidth: 18,
+      height: 18,
+      paddingHorizontal: 4,
+      borderRadius: 9,
+      backgroundColor: theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    filterBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+
+    loader: { flex: 1, justifyContent: 'center' },
+    listContent: { paddingHorizontal: 16, paddingBottom: 110 },
+
+    empty: { alignItems: 'center', marginTop: 60 },
+    emptyTitle: { fontSize: 18, fontWeight: '700', color: theme.colors.text, marginBottom: 6 },
+    emptyBody: { fontSize: 14, color: theme.colors.muted },
+
+    tabBar: {
+      position: 'absolute',
+      left: 12,
+      right: 12,
+      bottom: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radii.xl,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      paddingVertical: 8,
+      paddingHorizontal: 6,
+      ...theme.elevation.raised,
+    },
+
+    // Filter sheet
+    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+    modalSheet: {
+      position: 'absolute',
+      left: 0, right: 0, bottom: 0,
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 24,
+      maxHeight: '80%',
+    },
+    sheetHandle: {
+      alignSelf: 'center',
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: theme.colors.border,
+      marginBottom: 12,
+    },
+    sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+    sheetTitle: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
+    clearText: { fontSize: 14, color: theme.colors.primary, fontWeight: '600' },
+    sheetLabel: { fontSize: 12, fontWeight: '600', color: theme.colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 14, marginBottom: 6 },
+    sheetInput: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: theme.radii.md,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: theme.colors.text,
+    },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: theme.radii.pill,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+    },
+    chipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+    chipText: { fontSize: 13, color: theme.colors.text, fontWeight: '500', textTransform: 'capitalize' },
+    chipTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  });

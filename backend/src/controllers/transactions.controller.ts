@@ -15,9 +15,12 @@ export const requestTransaction: RequestHandler = async (req, res, next) => {
   try {
     const { user } = req as AuthenticatedRequest;
     const buyerId = user?.id;
-    const { listingId, offeredPrice, notes } = req.body;
+    const { listingId, offeredPrice, notes, ghgDiscount: rawGhgDiscount } = req.body;
     if (!buyerId || !listingId) throw new AppError(400, "Missing buyer or listing");
     if (offeredPrice === undefined || offeredPrice === null) throw new AppError(400, "Missing offered price");
+
+    const ghgDiscount = Number(rawGhgDiscount ?? 0);
+    if (ghgDiscount < 0) throw new AppError(400, "GHG discount cannot be negative");
 
     // Get listing and seller
     const { data: listing, error: listingError } = await supabaseAdmin
@@ -29,7 +32,35 @@ export const requestTransaction: RequestHandler = async (req, res, next) => {
     if (listingError || !listing) throw new AppError(404, "Listing not found or unavailable");
     if (listing.owner_user_id === buyerId) throw new AppError(400, "Cannot buy your own listing");
 
-    // Create transaction (store offered price and optional notes)
+    // Check buyer wallet balance against effective price
+    const { data: buyerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("wallet_balance, ghg_balance")
+      .eq("id", buyerId)
+      .maybeSingle();
+
+    const walletBalance = Number(buyerProfile?.wallet_balance ?? 0);
+    const ghgBalance = Number(buyerProfile?.ghg_balance ?? 0);
+    const effectivePrice = offeredPrice - ghgDiscount;
+
+    if (effectivePrice < 0) throw new AppError(400, "Discount cannot exceed offered price");
+    if (walletBalance < effectivePrice) throw new AppError(400, "Insufficient wallet balance");
+
+    // Validate GHG discount: user must have enough GHG balance (100 kg = $1)
+    if (ghgDiscount > 0) {
+      const kgRequired = ghgDiscount * 100; // $1 discount costs 100 kg
+      if (ghgBalance < kgRequired) {
+        throw new AppError(400, "Insufficient GHG balance for this discount");
+      }
+
+      // Deduct GHG balance immediately when offer is placed
+      await supabaseAdmin.rpc("increment_ghg_balance", {
+        user_id: buyerId,
+        amount: -kgRequired,
+      });
+    }
+
+    // Create transaction
     const { data, error } = await supabaseAdmin
       .from("transactions")
       .insert({
@@ -38,6 +69,7 @@ export const requestTransaction: RequestHandler = async (req, res, next) => {
         seller_id: listing.owner_user_id,
         status: "pending",
         offered_price: offeredPrice,
+        ghg_discount: ghgDiscount,
         notes: notes ?? null,
       })
       .select()
@@ -62,19 +94,12 @@ export const respondTransaction: RequestHandler = async (req, res, next) => {
     // Get transaction
     const { data: txn, error: txnError } = await supabaseAdmin
       .from("transactions")
-      .select("id, seller_id, listing_id, status")
+      .select("id, seller_id, buyer_id, listing_id, status, ghg_discount")
       .eq("id", transactionId)
       .single();
     if (txnError || !txn) throw new AppError(404, "Transaction not found");
     if (txn.seller_id !== sellerId) throw new AppError(403, "Not your transaction");
     if (txn.status !== "pending") throw new AppError(400, "Transaction already processed");
-
-    // Get buyer id from transaction
-    const { data: fullTxn } = await supabaseAdmin
-      .from("transactions")
-      .select("buyer_id")
-      .eq("id", transactionId)
-      .single();
 
     // Update transaction status
     const { error: updateError } = await supabaseAdmin
@@ -83,21 +108,107 @@ export const respondTransaction: RequestHandler = async (req, res, next) => {
       .eq("id", transactionId);
     if (updateError) throw updateError;
 
-    // If approved, mark listing as sold and award GHG credits
-    if (action === "approved") {
+    // If rejected and buyer used GHG discount, refund the GHG balance
+    if (action === "rejected" && Number(txn.ghg_discount) > 0) {
+      const kgToRefund = Number(txn.ghg_discount) * 100;
+      await supabaseAdmin.rpc("increment_ghg_balance", {
+        user_id: txn.buyer_id,
+        amount: kgToRefund,
+      });
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+// Buyer or seller confirms transaction completion
+export const confirmTransaction: RequestHandler = async (req, res, next) => {
+  try {
+    const { user } = req as AuthenticatedRequest;
+    const userId = user?.id;
+    if (!userId) throw new AppError(401, "Unauthorized");
+
+    const { id: transactionId } = req.params;
+    if (!transactionId) throw new AppError(400, "Missing transaction ID");
+
+    // Load txn to determine role
+    const { data: txn, error: txnError } = await supabaseAdmin
+      .from("transactions")
+      .select("id, buyer_id, seller_id, listing_id, status, offered_price, ghg_discount")
+      .eq("id", transactionId)
+      .single();
+    if (txnError || !txn) throw new AppError(404, "Transaction not found");
+    if (txn.status !== "approved") throw new AppError(400, "Transaction must be approved before confirming");
+
+    const isBuyer = txn.buyer_id === userId;
+    const isSeller = txn.seller_id === userId;
+    if (!isBuyer && !isSeller) throw new AppError(403, "Not your transaction");
+
+    const myField = isBuyer ? "buyer_confirmed" : "seller_confirmed";
+
+    // Atomically set this user's confirmation flag. WHERE clause guarantees:
+    // - txn is still 'approved' (not rejected/completed)
+    // - this user has not already confirmed (prevents double-submit)
+    const { data: afterFlag, error: flagError } = await supabaseAdmin
+      .from("transactions")
+      .update({ [myField]: true })
+      .eq("id", transactionId)
+      .eq("status", "approved")
+      .eq(myField, false)
+      .select("id, buyer_confirmed, seller_confirmed")
+      .maybeSingle();
+
+    if (flagError) throw flagError;
+    if (!afterFlag) throw new AppError(400, "Already confirmed or no longer approved");
+
+    // Claim the completion transition atomically — only one call can flip status
+    // from 'approved' → 'completed', so only that caller runs the payout logic.
+    // This is what prevents the race where both users confirm simultaneously
+    // and neither side triggers the transfer.
+    let claimedCompletion = false;
+    if (afterFlag.buyer_confirmed && afterFlag.seller_confirmed) {
+      const { data: claimRow, error: claimError } = await supabaseAdmin
+        .from("transactions")
+        .update({ status: "completed" })
+        .eq("id", transactionId)
+        .eq("status", "approved")
+        .eq("buyer_confirmed", true)
+        .eq("seller_confirmed", true)
+        .select("id")
+        .maybeSingle();
+      if (claimError) throw claimError;
+      claimedCompletion = !!claimRow;
+    }
+
+    if (claimedCompletion) {
+      const effectivePrice = Number(txn.offered_price) - Number(txn.ghg_discount ?? 0);
+
+      // Transfer wallet balance (buyer → seller)
+      if (effectivePrice > 0) {
+        await supabaseAdmin.rpc("transfer_wallet_balance", {
+          p_buyer_id: txn.buyer_id,
+          p_seller_id: txn.seller_id,
+          p_amount: effectivePrice,
+        });
+      }
+
+      // Mark listing as sold
       await supabaseAdmin
         .from("listings")
         .update({ status: "sold" })
         .eq("id", txn.listing_id);
 
-      // Fetch listing GHG data to award credits
+      // Fetch listing GHG data + title for history
       const { data: listing } = await supabaseAdmin
         .from("listings")
-        .select("ghg_manufacturing_kg, ghg_materials_kg, ghg_transport_kg, ghg_end_of_life_kg")
+        .select("title, ghg_manufacturing_kg, ghg_materials_kg, ghg_transport_kg, ghg_end_of_life_kg")
         .eq("id", txn.listing_id)
         .single();
 
-      if (listing && fullTxn) {
+      if (listing) {
         const buyerCredit =
           (Number(listing.ghg_manufacturing_kg) || 0) +
           (Number(listing.ghg_materials_kg) || 0) +
@@ -105,28 +216,74 @@ export const respondTransaction: RequestHandler = async (req, res, next) => {
 
         const sellerCredit = Number(listing.ghg_end_of_life_kg) || 0;
 
-        // Award buyer credits (upsert profile row if missing)
+        // Award buyer GHG credits + record history
         if (buyerCredit > 0) {
           await supabaseAdmin.rpc("increment_ghg_balance", {
-            user_id: fullTxn.buyer_id,
+            user_id: txn.buyer_id,
             amount: buyerCredit,
+          });
+          await supabaseAdmin.from("ghg_history").insert({
+            user_id: txn.buyer_id,
+            transaction_id: txn.id,
+            listing_title: listing.title,
+            role: "buyer",
+            kg_saved: buyerCredit,
           });
         }
 
-        // Award seller credits
+        // Award seller GHG credits + record history
         if (sellerCredit > 0) {
           await supabaseAdmin.rpc("increment_ghg_balance", {
-            user_id: sellerId,
+            user_id: txn.seller_id,
             amount: sellerCredit,
+          });
+          await supabaseAdmin.from("ghg_history").insert({
+            user_id: txn.seller_id,
+            transaction_id: txn.id,
+            listing_title: listing.title,
+            role: "seller",
+            kg_saved: sellerCredit,
           });
         }
       }
     }
-    res.status(200).json({ success: true });
+
+    res.status(200).json({
+      success: true,
+      buyer_confirmed: afterFlag.buyer_confirmed,
+      seller_confirmed: afterFlag.seller_confirmed,
+      completed: claimedCompletion,
+    });
   } catch (error) {
     next(error);
   }
 };
+
+
+// Get GHG history for current user
+export const getGhgHistory: RequestHandler = async (req, res, next) => {
+  try {
+    const { user } = req as AuthenticatedRequest;
+    const userId = user?.id;
+    if (!userId) throw new AppError(401, "Unauthorized");
+
+    const limit = Math.min(parseInt(String(req.query.limit ?? "50")) || 50, 100);
+    const offset = Math.max(parseInt(String(req.query.offset ?? "0")) || 0, 0);
+
+    const { data, error } = await supabaseAdmin
+      .from("ghg_history")
+      .select("id, transaction_id, listing_title, role, kg_saved, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+    res.status(200).json({ data: data ?? [] });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 // Get transactions for current user (role: seller|buyer|all, optional status)
 export const getMyTransactions: RequestHandler = async (req, res, next) => {
@@ -141,7 +298,7 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
     const limit = Math.min(parseInt(String(req.query.limit ?? '20')) || 20, 100);
     const offset = Math.max(parseInt(String(req.query.offset ?? '0')) || 0, 0);
 
-    let query = supabaseAdmin.from('transactions').select('id, listing_id, buyer_id, seller_id, status, offered_price, notes, created_at');
+    let query = supabaseAdmin.from('transactions').select('id, listing_id, buyer_id, seller_id, status, offered_price, ghg_discount, notes, buyer_confirmed, seller_confirmed, created_at');
 
     if (role === 'seller') query = query.eq('seller_id', userId);
     else if (role === 'buyer') query = query.eq('buyer_id', userId);
@@ -208,7 +365,10 @@ export const getMyTransactions: RequestHandler = async (req, res, next) => {
       listing_price: listingsMap[String(r.listing_id)]?.price ?? null,
       listing_image_url: listingImageMap[String(r.listing_id)] ?? null,
       offered_price: r.offered_price ?? null,
+      ghg_discount: r.ghg_discount ?? 0,
       notes: r.notes ?? null,
+      buyer_confirmed: r.buyer_confirmed ?? false,
+      seller_confirmed: r.seller_confirmed ?? false,
       buyer_email: usersMap[String(r.buyer_id)]?.email ?? null,
       seller_email: usersMap[String(r.seller_id)]?.email ?? null,
     }));

@@ -14,11 +14,16 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 }
 
 // Buyer requests to purchase a listing
-export async function requestTransaction(listingId: string, offeredPrice: number, notes?: string) {
+export async function requestTransaction(
+  listingId: string,
+  offeredPrice: number,
+  notes?: string,
+  ghgDiscount?: number
+) {
   const res = await fetch(`${API_BASE_URL}/transactions/request`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ listingId, offeredPrice, notes }),
+    body: JSON.stringify({ listingId, offeredPrice, notes, ghgDiscount: ghgDiscount ?? 0 }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Failed to request transaction: ${res.status}`);
@@ -35,6 +40,29 @@ export async function respondTransaction(transactionId: string, action: 'approve
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Failed to respond to transaction: ${res.status}`);
   return json.data ?? json;
+}
+
+// Buyer or seller confirms transaction completion
+export async function confirmTransaction(transactionId: string) {
+  const res = await fetch(`${API_BASE_URL}/transactions/${transactionId}/confirm`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({}),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Failed to confirm transaction: ${res.status}`);
+  return json;
+}
+
+// Get GHG history for current user
+export async function getGhgHistory(params?: { limit?: number; offset?: number }) {
+  const url = new URL(`${API_BASE_URL}/transactions/ghg-history`);
+  if (params?.limit !== undefined) url.searchParams.set('limit', String(params.limit));
+  if (params?.offset !== undefined) url.searchParams.set('offset', String(params.offset));
+  const res = await fetch(url.toString(), { headers: authHeaders() });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Failed to fetch GHG history: ${res.status}`);
+  return json.data ?? [];
 }
 
 // List current user's transactions (role: 'seller'|'buyer'|'all', optional status)
