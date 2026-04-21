@@ -2,28 +2,71 @@ import React from 'react';
 import { Pressable, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Size = 'sm' | 'md' | 'lg';
+
 type Props = {
   children: React.ReactNode;
   onPress?: () => void;
-  variant?: 'primary' | 'ghost';
+  variant?: Variant;
+  size?: Size;
   style?: ViewStyle | any;
+  textStyle?: TextStyle;
   accessibilityLabel?: string;
+  disabled?: boolean;
+  fullWidth?: boolean;
 };
 
-export default function Button({ children, onPress, variant = 'primary', style, accessibilityLabel }: Props) {
+export default function Button({
+  children,
+  onPress,
+  variant = 'primary',
+  size = 'md',
+  style,
+  textStyle,
+  accessibilityLabel,
+  disabled,
+  fullWidth,
+}: Props) {
   const { theme } = useTheme();
   const styles = makeStyles(theme.colors, theme.spacing, theme.radii);
 
-  const labelStyle = variant === 'ghost' ? styles.labelGhost : styles.labelPrimary;
+  const containerStyle = [
+    styles.base,
+    styles[`size_${size}` as const],
+    styles[`variant_${variant}` as const],
+    fullWidth && styles.fullWidth,
+  ];
+
+  const labelBase =
+    variant === 'primary' || variant === 'danger'
+      ? styles.labelOnColor
+      : variant === 'secondary'
+      ? styles.labelSecondary
+      : styles.labelGhost;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => [styles.base, variant === 'ghost' ? styles.ghost : styles.primary, pressed && styles.pressed, style]}
+      onPress={disabled ? undefined : onPress}
+      style={({ pressed }) => [
+        ...containerStyle,
+        pressed && !disabled && styles.pressed,
+        disabled && styles.disabled,
+        style,
+      ]}
     >
-      <Text style={labelStyle as TextStyle}>{children as any}</Text>
+      <Text
+        style={[
+          styles.labelBase,
+          styles[`labelSize_${size}` as const],
+          labelBase,
+          textStyle,
+        ]}
+      >
+        {children as any}
+      </Text>
     </Pressable>
   );
 }
@@ -31,21 +74,38 @@ export default function Button({ children, onPress, variant = 'primary', style, 
 const makeStyles = (colors: any, spacing: any, radii: any) =>
   StyleSheet.create({
     base: {
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.md,
       borderRadius: radii.md,
       alignItems: 'center',
       justifyContent: 'center',
+      flexDirection: 'row',
     },
-    primary: {
-      backgroundColor: colors.primary,
+    fullWidth: { alignSelf: 'stretch' },
+    size_sm: { paddingVertical: 8, paddingHorizontal: 12, minHeight: 36 },
+    size_md: { paddingVertical: 12, paddingHorizontal: 18, minHeight: 44 },
+    size_lg: { paddingVertical: 14, paddingHorizontal: 20, minHeight: 52 },
+
+    variant_primary: { backgroundColor: colors.primary },
+    variant_secondary: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.text,
     },
-    ghost: {
+    variant_ghost: {
       backgroundColor: 'transparent',
       borderWidth: 1,
       borderColor: colors.border,
     },
-    pressed: { opacity: 0.85 },
-    labelPrimary: { color: '#fff', fontWeight: '600' },
-    labelGhost: { color: colors.primary, fontWeight: '600' },
+    variant_danger: { backgroundColor: colors.danger },
+
+    pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
+    disabled: { opacity: 0.45 },
+
+    labelBase: { fontWeight: '600' },
+    labelSize_sm: { fontSize: 13 },
+    labelSize_md: { fontSize: 15 },
+    labelSize_lg: { fontSize: 16 },
+
+    labelOnColor: { color: '#FFFFFF' },
+    labelSecondary: { color: colors.text },
+    labelGhost: { color: colors.text },
   });

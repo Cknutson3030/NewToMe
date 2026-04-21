@@ -1,495 +1,449 @@
 import React, { useState } from 'react';
 import {
-    View,
-    Text,
-    TextInput,
-    Button,
-    Alert,
-    StyleSheet,
-    ScrollView,
-    Image,
-    TouchableOpacity,
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    TouchableWithoutFeedback,
-    Keyboard,
+  View,
+  Text,
+  TextInput,
+  Alert,
+  StyleSheet,
+  ScrollView,
+  Image,
+  Pressable,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import {
-    updateListing as apiUpdateListing,
-    deleteListing as apiDeleteListing,
-    uploadListingImages,
-    deleteListingImage,
+  updateListing as apiUpdateListing,
+  deleteListing as apiDeleteListing,
+  uploadListingImages,
+  deleteListingImage,
 } from '../api/listings';
 import { useTheme } from '../theme/ThemeProvider';
-import UI_Button from '../components/ui/Button';
+import Button from '../components/ui/Button';
 
-// Convert image to JPEG (handles HEIC from iPhone)
 const convertToJpeg = async (uri: string): Promise<{ uri: string; mimeType: string }> => {
-    const result = await ImageManipulator.manipulateAsync(
-        uri,
-        [],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-    );
-    return { uri: result.uri, mimeType: 'image/jpeg' };
+  const result = await ImageManipulator.manipulateAsync(uri, [], {
+    compress: 0.8,
+    format: ImageManipulator.SaveFormat.JPEG,
+  });
+  return { uri: result.uri, mimeType: 'image/jpeg' };
 };
 
 interface ExistingImage {
-    id: string;
-    image_url: string;
-    sort_order: number;
+  id: string;
+  image_url: string;
+  sort_order: number;
 }
 
 interface NewImage {
-    uri: string;
-    mimeType?: string;
+  uri: string;
+  mimeType?: string;
 }
+
+const STATUSES = ['active', 'inactive', 'sold'] as const;
+type Status = typeof STATUSES[number];
 
 export default function EditListingScreen({ route, navigation }: { route: any; navigation: any }) {
-    const { listing } = route.params;
+  const { listing } = route.params;
+  const { theme } = useTheme();
 
-    // State for form fields (pre-filled with existing data)
-    const [title, setTitle] = useState(listing.title || '');
-    const [description, setDescription] = useState(listing.description || '');
-    const [price, setPrice] = useState(listing.price?.toString() || '');
-    const [category, setCategory] = useState(listing.category || '');
-    const [locationCity, setLocationCity] = useState(listing.location_city || '');
-    const [itemCondition, setItemCondition] = useState(listing.item_condition || '');
-    const [status, setStatus] = useState(listing.status || 'active');
-    const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState(listing.title || '');
+  const [description, setDescription] = useState(listing.description || '');
+  const [price, setPrice] = useState(listing.price?.toString() || '');
+  const [category, setCategory] = useState(listing.category || '');
+  const [locationCity, setLocationCity] = useState(listing.location_city || '');
+  const [itemCondition, setItemCondition] = useState(listing.item_condition || '');
+  const [status, setStatus] = useState<Status>((listing.status as Status) || 'active');
+  const [loading, setLoading] = useState(false);
 
-    // Image state
-    const [existingImages, setExistingImages] = useState<ExistingImage[]>(
-        (listing.listing_images || [])
-            .slice()
-            .sort((a: ExistingImage, b: ExistingImage) => a.sort_order - b.sort_order)
-    );
-    const [newImages, setNewImages] = useState<NewImage[]>([]);
-    const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
-    const { theme } = useTheme();
+  const [existingImages, setExistingImages] = useState<ExistingImage[]>(
+    (listing.listing_images || [])
+      .slice()
+      .sort((a: ExistingImage, b: ExistingImage) => a.sort_order - b.sort_order),
+  );
+  const [newImages, setNewImages] = useState<NewImage[]>([]);
+  const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
 
-    const totalImages = existingImages.length + newImages.length;
-    const maxImages = 5;
+  const totalImages = existingImages.length + newImages.length;
+  const maxImages = 5;
 
-    // Remove an existing image (calls backend)
-    const handleRemoveExistingImage = async (imageId: string) => {
-        Alert.alert('Remove Image', 'Are you sure you want to remove this image?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Remove',
-                style: 'destructive',
-                onPress: async () => {
-                    setDeletingImageId(imageId);
-                    try {
-                        await deleteListingImage(listing.id, imageId);
-                        setExistingImages((prev) => prev.filter((img) => img.id !== imageId));
-                    } catch (err) {
-                        console.error('[removeImage] Error:', err);
-                        Alert.alert('Error', err instanceof Error ? err.message : 'Failed to remove image');
-                    } finally {
-                        setDeletingImageId(null);
-                    }
-                },
-            },
-        ]);
-    };
+  const handleRemoveExistingImage = async (imageId: string) => {
+    Alert.alert('Remove image', 'Are you sure you want to remove this image?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingImageId(imageId);
+          try {
+            await deleteListingImage(listing.id, imageId);
+            setExistingImages((prev) => prev.filter((img) => img.id !== imageId));
+          } catch (err) {
+            Alert.alert('Error', err instanceof Error ? err.message : 'Failed to remove image');
+          } finally {
+            setDeletingImageId(null);
+          }
+        },
+      },
+    ]);
+  };
 
-    // Remove a newly-picked (not yet uploaded) image
-    const handleRemoveNewImage = (index: number) => {
-        setNewImages((prev) => prev.filter((_, i) => i !== index));
-    };
+  const handleRemoveNewImage = (index: number) => {
+    setNewImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
-    // Pick images from library
-    const pickImages = async () => {
-        const remaining = maxImages - totalImages;
-        if (remaining <= 0) {
-            Alert.alert('Limit Reached', `Maximum ${maxImages} images allowed.`);
-            return;
-        }
+  const pickImages = async () => {
+    const remaining = maxImages - totalImages;
+    if (remaining <= 0) return Alert.alert('Limit reached', `Maximum ${maxImages} images.`);
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) return Alert.alert('Permission required', 'Access to your photo library is needed.');
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      const selected = result.assets.slice(0, remaining).map((a) => ({ uri: a.uri, mimeType: a.mimeType }));
+      setNewImages((prev) => [...prev, ...selected].slice(0, maxImages - existingImages.length));
+    }
+  };
 
-        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!permissionResult.granted) {
-            Alert.alert('Permission required', 'Permission to access camera roll is required!');
-            return;
-        }
+  const takePhoto = async () => {
+    if (totalImages >= maxImages) return Alert.alert('Limit reached', `Maximum ${maxImages} images.`);
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permissionResult.granted) return Alert.alert('Permission required', 'Camera access is needed.');
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (!result.canceled && result.assets.length > 0) {
+      const a = result.assets[0];
+      setNewImages((prev) =>
+        [...prev, { uri: a.uri, mimeType: a.mimeType }].slice(0, maxImages - existingImages.length),
+      );
+    }
+  };
 
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            allowsMultipleSelection: true,
-            quality: 0.7,
-        });
+  const uploadNewImages = async () => {
+    if (newImages.length === 0) return;
+    const formData = new FormData();
+    for (let i = 0; i < newImages.length; i++) {
+      const img = newImages[i];
+      let uri = img.uri;
+      let mimeType = img.mimeType || '';
+      if (
+        mimeType === 'image/heic' ||
+        mimeType === 'image/heif' ||
+        uri.toLowerCase().includes('.heic') ||
+        !mimeType ||
+        !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)
+      ) {
+        const converted = await convertToJpeg(uri);
+        uri = converted.uri;
+        mimeType = converted.mimeType;
+      }
+      formData.append('images', {
+        uri,
+        name: `photo_${Date.now()}_${i}.jpg`,
+        type: mimeType,
+      } as unknown as Blob);
+    }
+    await uploadListingImages(listing.id, formData);
+  };
 
-        if (!result.canceled) {
-            const selected = result.assets.slice(0, remaining).map((a) => ({
-                uri: a.uri,
-                mimeType: a.mimeType,
-            }));
-            setNewImages((prev) => [...prev, ...selected].slice(0, maxImages - existingImages.length));
-        }
-    };
+  const save = async () => {
+    if (!title.trim()) return Alert.alert('Missing title', 'Please add a title.');
+    setLoading(true);
+    try {
+      const payload: Record<string, any> = {};
+      if (title !== listing.title) payload.title = title;
+      if (description !== (listing.description || '')) payload.description = description;
+      if (price !== (listing.price?.toString() || '')) payload.price = price ? parseFloat(price) : null;
+      if (category !== (listing.category || '')) payload.category = category;
+      if (locationCity !== (listing.location_city || '')) payload.location_city = locationCity;
+      if (itemCondition !== (listing.item_condition || '')) payload.item_condition = itemCondition;
+      if (status !== (listing.status || 'active')) payload.status = status;
 
-    // Take a photo with camera
-    const takePhoto = async () => {
-        if (totalImages >= maxImages) {
-            Alert.alert('Limit Reached', `Maximum ${maxImages} images allowed.`);
-            return;
-        }
+      const hasFieldChanges = Object.keys(payload).length > 0;
+      const hasNewImages = newImages.length > 0;
+      if (!hasFieldChanges && !hasNewImages) {
+        setLoading(false);
+        return Alert.alert('No changes', 'Nothing was modified.');
+      }
+      if (hasFieldChanges) await apiUpdateListing(listing.id, payload);
+      if (hasNewImages) await uploadNewImages();
+      Alert.alert('Saved', 'Your listing has been updated.');
+      navigation.goBack();
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-        if (!permissionResult.granted) {
-            Alert.alert('Permission required', 'Permission to access camera is required!');
-            return;
-        }
-
-        const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-        if (!result.canceled && result.assets.length > 0) {
-            const a = result.assets[0];
-            setNewImages((prev) =>
-                [...prev, { uri: a.uri, mimeType: a.mimeType }].slice(0, maxImages - existingImages.length)
-            );
-        }
-    };
-
-    // Upload newly-added images
-    const uploadNewImages = async () => {
-        if (newImages.length === 0) return;
-
-        const formData = new FormData();
-        for (let i = 0; i < newImages.length; i++) {
-            const img = newImages[i];
-            let uri = img.uri;
-            let mimeType = img.mimeType || '';
-
-            // Convert HEIC/HEIF or unknown formats to JPEG
-            if (
-                mimeType === 'image/heic' ||
-                mimeType === 'image/heif' ||
-                uri.toLowerCase().includes('.heic') ||
-                !mimeType ||
-                !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)
-            ) {
-                const converted = await convertToJpeg(uri);
-                uri = converted.uri;
-                mimeType = converted.mimeType;
-            }
-
-            const fileName = `photo_${Date.now()}_${i}.jpg`;
-            formData.append('images', {
-                uri,
-                name: fileName,
-                type: mimeType,
-            } as unknown as Blob);
-        }
-
-        await uploadListingImages(listing.id, formData);
-    };
-
-    // Save all changes
-    const updateListing = async () => {
-        if (!title.trim()) {
-            Alert.alert('Error', 'Title is required');
-            return;
-        }
-
-        setLoading(true);
-        try {
-            // Build update payload with only changed fields
-            const payload: Record<string, any> = {};
-            if (title !== listing.title) payload.title = title;
-            if (description !== (listing.description || '')) payload.description = description;
-            if (price !== (listing.price?.toString() || '')) {
-                payload.price = price ? parseFloat(price) : null;
-            }
-            if (category !== (listing.category || '')) payload.category = category;
-            if (locationCity !== (listing.location_city || '')) payload.location_city = locationCity;
-            if (itemCondition !== (listing.item_condition || '')) payload.item_condition = itemCondition;
-            if (status !== (listing.status || 'active')) payload.status = status;
-
-            const hasFieldChanges = Object.keys(payload).length > 0;
-            const hasNewImages = newImages.length > 0;
-
-            if (!hasFieldChanges && !hasNewImages) {
-                Alert.alert('No Changes', 'No fields were modified');
-                setLoading(false);
-                return;
-            }
-
-            // Update text fields if changed
-            if (hasFieldChanges) {
-                await apiUpdateListing(listing.id, payload);
-            }
-
-            // Upload new images if any
-            if (hasNewImages) {
-                await uploadNewImages();
-            }
-
-            Alert.alert('Success', 'Listing updated!');
+  const remove = async () => {
+    Alert.alert('Delete listing', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setLoading(true);
+          try {
+            await apiDeleteListing(listing.id);
+            Alert.alert('Deleted', 'Listing has been deleted.');
             navigation.goBack();
-        } catch (err) {
-            console.error('[updateListing] Error:', err);
+          } catch (err) {
             Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
-        } finally {
+          } finally {
             setLoading(false);
-        }
-    };
+          }
+        },
+      },
+    ]);
+  };
 
-    // Delete the entire listing
-    const deleteListing = async () => {
-        Alert.alert(
-            'Delete Listing',
-            'Are you sure you want to delete this listing? This action cannot be undone.',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                        setLoading(true);
-                        try {
-                            await apiDeleteListing(listing.id);
-                            Alert.alert('Deleted', 'Listing has been deleted.');
-                            navigation.goBack();
-                        } catch (err) {
-                            console.error('[deleteListing] Error:', err);
-                            Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
-                        } finally {
-                            setLoading(false);
-                        }
-                    },
-                },
-            ]
-        );
-    };
+  const styles = makeStyles(theme);
 
-    return (
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}>
-            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-            <Text style={styles.header}>Edit Listing</Text>
+  return (
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.topBar}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={10}>
+          <Text style={styles.backArrow}>←</Text>
+        </Pressable>
+        <Text style={styles.topTitle}>Edit listing</Text>
+        <View style={{ width: 24 }} />
+      </View>
 
-            {/* ── Images Section ── */}
-            <Text style={styles.label}>
-                Images ({totalImages}/{maxImages})
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <Text style={styles.sectionLabel}>
+              Photos ({totalImages}/{maxImages})
             </Text>
-
-            <View style={styles.imageGrid}>
-                {/* Existing images */}
-                {existingImages.map((img) => (
-                    <View key={img.id} style={styles.imageWrapper}>
-                        <Image source={{ uri: img.image_url }} style={styles.imageThumb} />
-                        {deletingImageId === img.id ? (
-                            <View style={styles.removeBadge}>
-                                <ActivityIndicator size="small" color="#fff" />
-                            </View>
-                        ) : (
-                            <TouchableOpacity
-                                style={styles.removeBadge}
-                                onPress={() => handleRemoveExistingImage(img.id)}
-                            >
-                                <Text style={styles.removeBadgeText}>✕</Text>
-                            </TouchableOpacity>
-                        )}
+            <View style={styles.photoRow}>
+              {existingImages.map((img) => (
+                <View key={img.id} style={styles.photoWrap}>
+                  <Image source={{ uri: img.image_url }} style={styles.photo} />
+                  {deletingImageId === img.id ? (
+                    <View style={styles.removeBadge}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
                     </View>
-                ))}
-
-                {/* Newly picked images */}
-                {newImages.map((img, index) => (
-                    <View key={`new-${index}`} style={styles.imageWrapper}>
-                        <Image source={{ uri: img.uri }} style={styles.imageThumb} />
-                        <TouchableOpacity
-                            style={[styles.removeBadge, { backgroundColor: '#F59E0B' }]}
-                            onPress={() => handleRemoveNewImage(index)}
-                        >
-                            <Text style={styles.removeBadgeText}>✕</Text>
-                        </TouchableOpacity>
-                        <View style={styles.newBadge}>
-                            <Text style={styles.newBadgeText}>NEW</Text>
-                        </View>
-                    </View>
-                ))}
-            </View>
-
-            {totalImages < maxImages && (
-                <View style={styles.imageButtons}>
-                    <View style={{ flex: 1, marginRight: 8 }}>
-                        <UI_Button onPress={pickImages}>Pick Images</UI_Button>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                        <UI_Button variant="ghost" onPress={takePhoto}>Take Photo</UI_Button>
-                    </View>
+                  ) : (
+                    <Pressable style={styles.removeBadge} onPress={() => handleRemoveExistingImage(img.id)} hitSlop={6}>
+                      <Text style={styles.removeBadgeText}>×</Text>
+                    </Pressable>
+                  )}
                 </View>
+              ))}
+              {newImages.map((img, index) => (
+                <View key={`new-${index}`} style={styles.photoWrap}>
+                  <Image source={{ uri: img.uri }} style={styles.photo} />
+                  <Pressable style={styles.removeBadge} onPress={() => handleRemoveNewImage(index)} hitSlop={6}>
+                    <Text style={styles.removeBadgeText}>×</Text>
+                  </Pressable>
+                  <View style={styles.newBadge}>
+                    <Text style={styles.newBadgeText}>NEW</Text>
+                  </View>
+                </View>
+              ))}
+              {totalImages < maxImages && (
+                <Pressable onPress={pickImages} style={styles.addPhoto}>
+                  <Text style={styles.addPhotoPlus}>+</Text>
+                  <Text style={styles.addPhotoText}>Add</Text>
+                </Pressable>
+              )}
+            </View>
+            {totalImages < maxImages && (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <Button variant="ghost" size="sm" style={{ flex: 1 }} onPress={takePhoto}>
+                  📷 Take photo
+                </Button>
+                <Button variant="ghost" size="sm" style={{ flex: 1 }} onPress={pickImages}>
+                  🖼 Pick images
+                </Button>
+              </View>
             )}
 
-            {/* ── Form Fields ── */}
+            <Text style={styles.sectionLabel}>Item details</Text>
             <TextInput
-                placeholder="Title *"
-                value={title}
-                onChangeText={setTitle}
-                style={styles.input}
+              placeholder="Title"
+              placeholderTextColor={theme.colors.muted}
+              value={title}
+              onChangeText={setTitle}
+              style={styles.input}
             />
-
             <TextInput
-                placeholder="Description"
-                value={description}
-                onChangeText={setDescription}
-                style={[styles.input, styles.textArea]}
-                multiline
-                numberOfLines={3}
+              placeholder="Description"
+              placeholderTextColor={theme.colors.muted}
+              value={description}
+              onChangeText={setDescription}
+              style={[styles.input, styles.textArea]}
+              multiline
             />
-
-            <TextInput
-                placeholder="Price"
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                placeholder="Price $"
+                placeholderTextColor={theme.colors.muted}
                 value={price}
                 onChangeText={setPrice}
-                style={styles.input}
+                style={[styles.input, { flex: 1 }]}
                 keyboardType="numeric"
-            />
-
-            <TextInput
-                placeholder="Category"
-                value={category}
-                onChangeText={setCategory}
-                style={styles.input}
-            />
-
-            <TextInput
-                placeholder="Location (City)"
-                value={locationCity}
-                onChangeText={setLocationCity}
-                style={styles.input}
-            />
-
-            <TextInput
-                placeholder="Item Condition"
+              />
+              <TextInput
+                placeholder="Condition"
+                placeholderTextColor={theme.colors.muted}
                 value={itemCondition}
                 onChangeText={setItemCondition}
-                style={styles.input}
-            />
+                style={[styles.input, { flex: 1 }]}
+              />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                placeholder="Category"
+                placeholderTextColor={theme.colors.muted}
+                value={category}
+                onChangeText={setCategory}
+                style={[styles.input, { flex: 1 }]}
+              />
+              <TextInput
+                placeholder="City"
+                placeholderTextColor={theme.colors.muted}
+                value={locationCity}
+                onChangeText={setLocationCity}
+                style={[styles.input, { flex: 1 }]}
+              />
+            </View>
 
-            <Text style={styles.label}>Status</Text>
+            <Text style={styles.sectionLabel}>Status</Text>
             <View style={styles.statusRow}>
-                {['active', 'inactive', 'sold'].map((s) => (
-                    <UI_Button key={s} variant={status === s ? 'primary' : 'ghost'} onPress={() => setStatus(s)}>
-                        {s.charAt(0).toUpperCase() + s.slice(1)}
-                    </UI_Button>
-                ))}
+              {STATUSES.map((s) => {
+                const active = status === s;
+                return (
+                  <Pressable
+                    key={s}
+                    onPress={() => setStatus(s)}
+                    style={[styles.statusChip, active && styles.statusChipActive]}
+                  >
+                    <Text style={[styles.statusChipText, active && styles.statusChipTextActive]}>
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
 
-            <View style={styles.buttonRow}>
-                <UI_Button variant="ghost" onPress={() => navigation.goBack()}>Cancel</UI_Button>
-                <UI_Button onPress={updateListing}>{loading ? 'Saving...' : 'Save Changes'}</UI_Button>
-            </View>
+            <Button size="lg" fullWidth onPress={save} disabled={loading} style={{ marginTop: 16 }}>
+              {loading ? 'Saving…' : 'Save changes'}
+            </Button>
 
             <View style={styles.deleteSection}>
-                <UI_Button variant="ghost" onPress={deleteListing}>Delete Listing</UI_Button>
+              <Button variant="danger" fullWidth onPress={remove} disabled={loading}>
+                Delete listing
+              </Button>
             </View>
-                </ScrollView>
-            </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-    );
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 16,
-        backgroundColor: '#f5f5f5',
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: theme.colors.background },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 12,
     },
-    header: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        marginBottom: 16,
+    backArrow: { fontSize: 24, color: theme.colors.text },
+    topTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text },
+
+    content: { padding: 20, paddingBottom: 40 },
+
+    sectionLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: theme.colors.muted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginTop: 12,
+      marginBottom: 8,
     },
-    label: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#374151',
-        marginBottom: 8,
-    },
-    input: {
-        borderWidth: 1,
-        borderColor: '#ccc',
-        borderRadius: 8,
-        padding: 12,
-        marginBottom: 12,
-        backgroundColor: '#fff',
-    },
-    textArea: {
-        height: 80,
-        textAlignVertical: 'top',
-    },
-    statusRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        marginBottom: 16,
-    },
-    buttonRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 16,
-        marginBottom: 16,
-    },
-    deleteSection: {
-        marginTop: 16,
-        marginBottom: 32,
-        paddingTop: 16,
-        borderTopWidth: 1,
-        borderTopColor: '#E5E7EB',
-    },
-    // Image styles
-    imageGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-        marginBottom: 12,
-    },
-    imageWrapper: {
-        position: 'relative',
-        width: 90,
-        height: 90,
-    },
-    imageThumb: {
-        width: 90,
-        height: 90,
-        borderRadius: 8,
-        backgroundColor: '#E5E7EB',
-    },
+
+    photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+    photoWrap: { position: 'relative', width: 80, height: 80 },
+    photo: { width: 80, height: 80, borderRadius: theme.radii.md, backgroundColor: theme.colors.surfaceAlt },
     removeBadge: {
-        position: 'absolute',
-        top: -6,
-        right: -6,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: '#DC2626',
-        alignItems: 'center',
-        justifyContent: 'center',
+      position: 'absolute',
+      top: -6,
+      right: -6,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: theme.colors.danger,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    removeBadgeText: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: 'bold',
-        lineHeight: 16,
-    },
+    removeBadgeText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', lineHeight: 18 },
     newBadge: {
-        position: 'absolute',
-        bottom: 2,
-        left: 2,
-        backgroundColor: '#F59E0B',
-        paddingHorizontal: 4,
-        paddingVertical: 1,
-        borderRadius: 4,
+      position: 'absolute',
+      bottom: 4,
+      left: 4,
+      backgroundColor: theme.colors.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: theme.radii.sm,
     },
-    newBadgeText: {
-        color: '#fff',
-        fontSize: 9,
-        fontWeight: 'bold',
+    newBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
+    addPhoto: {
+      width: 80,
+      height: 80,
+      borderRadius: theme.radii.md,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderStyle: 'dashed',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surfaceAlt,
     },
-    imageButtons: {
-        flexDirection: 'row',
-        marginBottom: 16,
+    addPhotoPlus: { fontSize: 24, color: theme.colors.muted, fontWeight: '300' },
+    addPhotoText: { fontSize: 11, color: theme.colors.muted, marginTop: 2 },
+
+    input: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: theme.radii.md,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: theme.colors.text,
+      marginBottom: 10,
+      backgroundColor: theme.colors.surface,
     },
-});
+    textArea: { height: 100, textAlignVertical: 'top' },
+
+    statusRow: { flexDirection: 'row', gap: 8 },
+    statusChip: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: theme.radii.pill,
+      backgroundColor: theme.colors.surfaceAlt,
+      alignItems: 'center',
+    },
+    statusChipActive: { backgroundColor: theme.colors.text },
+    statusChipText: { fontSize: 13, fontWeight: '700', color: theme.colors.text },
+    statusChipTextActive: { color: '#FFFFFF' },
+
+    deleteSection: {
+      marginTop: 24,
+      paddingTop: 20,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+  });

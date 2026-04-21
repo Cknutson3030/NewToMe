@@ -2,11 +2,30 @@ import React from 'react';
 import { View, StyleSheet, ViewProps } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 
-export default function Card({ children, style, ...rest }: ViewProps) {
+type Props = ViewProps & {
+  variant?: 'default' | 'flat' | 'outlined';
+  padding?: 'none' | 'sm' | 'md' | 'lg';
+};
+
+export default function Card({
+  children,
+  style,
+  variant = 'default',
+  padding = 'md',
+  ...rest
+}: Props) {
   const { theme } = useTheme();
   const styles = makeStyles(theme);
   return (
-    <View style={[styles.card, style]} {...rest}>
+    <View
+      style={[
+        styles.base,
+        styles[`variant_${variant}` as const],
+        styles[`padding_${padding}` as const],
+        style,
+      ]}
+      {...rest}
+    >
       {children}
     </View>
   );
@@ -14,12 +33,18 @@ export default function Card({ children, style, ...rest }: ViewProps) {
 
 const makeStyles = (theme: any) =>
   StyleSheet.create({
-    card: {
+    base: {
       backgroundColor: theme.colors.surface,
-      borderRadius: theme.radii.md,
-      padding: theme.spacing.md,
+      borderRadius: theme.radii.lg,
+    },
+    variant_default: { ...theme.elevation.card },
+    variant_flat: { backgroundColor: theme.colors.surfaceAlt },
+    variant_outlined: {
       borderWidth: 1,
       borderColor: theme.colors.border,
-      ...theme.elevation.card,
     },
+    padding_none: { padding: 0 },
+    padding_sm: { padding: theme.spacing.sm },
+    padding_md: { padding: theme.spacing.md },
+    padding_lg: { padding: theme.spacing.lg },
   });

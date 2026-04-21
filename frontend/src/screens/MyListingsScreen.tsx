@@ -1,47 +1,48 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  ActivityIndicator,
-  Image,
-  RefreshControl,
-  Alert,
-  ScrollView,
+  View, Text, FlatList, StyleSheet, Image, RefreshControl, Alert, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getMyListings } from '../api/listings';
-import { listMyTransactions, respondTransaction } from '../api/transactions';
+import { listMyTransactions, respondTransaction, confirmTransaction } from '../api/transactions';
+import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../theme/ThemeProvider';
-import Button from '../components/ui/Button';
+import { Card, Button, Skeleton } from '../components/ui';
+
+const FILTERS = ['pending', 'active', 'approved_sold', 'rejected'] as const;
+type Filter = typeof FILTERS[number];
+
+const FILTER_LABELS: Record<Filter, string> = {
+  pending: 'Offers',
+  active: 'Active',
+  approved_sold: 'Sold',
+  rejected: 'Rejected',
+};
 
 export default function MyListingsScreen({ navigation }: { navigation: any }) {
+  const { refreshUser } = useAuth();
+  const { theme } = useTheme();
   const [listings, setListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'pending'|'active'|'approved'|'rejected'|'sold'|'approved_sold'>('pending');
-  const { theme } = useTheme();
+  const [statusFilter, setStatusFilter] = useState<Filter>('active');
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const fetchMyListings = useCallback(async () => {
     try {
       const res = await getMyListings();
       const data = Array.isArray(res) ? res : res.data || [];
+      const transactionStatuses = ['pending', 'approved', 'rejected'];
+      const listingStatuses = ['active', 'sold'];
 
-      const transactionStatuses = ['pending','approved','rejected'];
-      const listingStatuses = ['active','sold'];
-
-      // Special handling for combined Approved/Sold filter
       if (statusFilter === 'approved_sold') {
         try {
           const txns = await listMyTransactions({ role: 'seller', status: 'approved' });
           const byListing: Record<string, any[]> = {};
           (txns || []).forEach((t: any) => {
             const lid = String(t.listing_id);
-            if (!byListing[lid]) byListing[lid] = [];
-            byListing[lid].push(t);
+            (byListing[lid] ||= []).push(t);
           });
-          // include listings that are sold or have an approved txn, and attach the approved txn as final_transaction
           const withFinal = data
             .filter((l: any) => String(l.status) === 'sold' || (byListing[String(l.id)] || []).length > 0)
             .map((l: any) => ({
@@ -50,36 +51,29 @@ export default function MyListingsScreen({ navigation }: { navigation: any }) {
               final_transaction: (byListing[String(l.id)] || []).find((t: any) => t.status === 'approved') || (byListing[String(l.id)] || [])[0] || null,
             }));
           setListings(withFinal);
-        } catch (err) {
+        } catch {
           setListings(data.filter((l: any) => String(l.status) === 'sold'));
         }
-
       } else if (transactionStatuses.includes(statusFilter)) {
         try {
           const txns = await listMyTransactions({ role: 'seller', status: statusFilter });
           const byListing: Record<string, any[]> = {};
           (txns || []).forEach((t: any) => {
             const lid = String(t.listing_id);
-            if (!byListing[lid]) byListing[lid] = [];
-            byListing[lid].push(t);
+            (byListing[lid] ||= []).push(t);
           });
-          // attach transactions and only include listings that have matching txns
           const withTxns = data
             .map((l: any) => ({ ...l, pending_transactions: byListing[String(l.id)] || [] }))
             .filter((l: any) => (l.pending_transactions || []).length > 0);
           setListings(withTxns);
-        } catch (err) {
-          // ignore transaction fetch errors for now
+        } catch {
           setListings(data);
         }
       } else if (listingStatuses.includes(statusFilter)) {
-        // filter listings by listing.status (e.g., active, sold)
         setListings(data.filter((l: any) => String(l.status) === statusFilter));
       } else {
-        // default — show all listings
         setListings(data);
       }
-
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to fetch your listings');
     } finally {
@@ -88,221 +82,259 @@ export default function MyListingsScreen({ navigation }: { navigation: any }) {
     }
   }, [statusFilter]);
 
-  useEffect(() => {
-    fetchMyListings();
-  }, [fetchMyListings]);
+  useEffect(() => { fetchMyListings(); }, [fetchMyListings]);
 
-  // Refresh when coming back from EditListing
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      fetchMyListings();
-    });
+    const unsubscribe = navigation.addListener('focus', () => fetchMyListings());
     return unsubscribe;
   }, [navigation, fetchMyListings]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchMyListings();
-  };
+  const onRefresh = () => { setRefreshing(true); fetchMyListings(); };
+
+  const styles = makeStyles(theme);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]} edges={['bottom']}>
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.topBar}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={10}>
+          <Text style={styles.backArrow}>←</Text>
+        </Pressable>
+        <Text style={styles.topTitle}>My Listings</Text>
+        <Pressable onPress={() => navigation.navigate('CreateListing')} hitSlop={10}>
+          <Text style={styles.plusText}>+</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.filterRow}>
+        {FILTERS.map((s) => (
+          <Pressable
+            key={s}
+            style={[styles.filterChip, statusFilter === s && styles.filterChipActive]}
+            onPress={() => setStatusFilter(s)}
+          >
+            <Text style={[styles.filterChipText, statusFilter === s && styles.filterChipTextActive]}>
+              {FILTER_LABELS[s]}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       {loading ? (
-        <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
+        <View style={{ padding: 16 }}>
+          <Skeleton style={{ height: 140, borderRadius: 16, marginBottom: 12 }} />
+          <Skeleton style={{ height: 140, borderRadius: 16, marginBottom: 12 }} />
+        </View>
       ) : (
-        <>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-            {(['pending','active','approved_sold','rejected'] as const).map(s => (
-              <Button key={s} variant={statusFilter === s ? 'primary' : 'ghost'} style={{ marginRight: 8 }} onPress={() => { setStatusFilter(s as any); setRefreshing(true); fetchMyListings(); }}>
-                {s === 'approved_sold' ? 'Approved/Sold' : (s.charAt(0).toUpperCase()+s.slice(1))}
-              </Button>
-            ))}
-          </ScrollView>
-          <FlatList
+        <FlatList
           data={listings}
-          keyExtractor={(item, index) => String(item?.id ?? index)}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
-          }
+          keyExtractor={(item, idx) => String(item?.id ?? idx)}
+          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} colors={[theme.colors.primary]} />}
           renderItem={({ item }) => {
-            const firstImage = item.listing_images
-              ?.sort((a: any, b: any) => a.sort_order - b.sort_order)?.[0];
+            const firstImage = item.listing_images?.sort?.((a: any, b: any) => a.sort_order - b.sort_order)?.[0];
             const finalTxn = item.final_transaction || (item.pending_transactions || []).find((t: any) => t.status === 'approved');
-            const showApprovedSoldView = statusFilter === 'approved_sold';
+            const isApprovedSold = statusFilter === 'approved_sold';
 
             return (
-              <View style={styles.card}>
-                {firstImage?.image_url && (
-                  <Image
-                    source={{ uri: firstImage.image_url }}
-                    style={styles.image}
-                    resizeMode="cover"
-                  />
-                )}
-                <View style={styles.cardBody}>
-                  <Text style={styles.title}>{item.title}</Text>
-                  {item.description ? (
-                    <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
-                  ) : null}
-                  <View style={styles.row}>
-                    {item.price != null && (
+              <Card padding="none" style={{ marginBottom: 12, overflow: 'hidden' }}>
+                <View style={{ flexDirection: 'row', padding: 12 }}>
+                  {firstImage?.image_url ? (
+                    <Image source={{ uri: firstImage.image_url }} style={styles.thumb} />
+                  ) : (
+                    <View style={[styles.thumb, { backgroundColor: theme.colors.surfaceAlt }]} />
+                  )}
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={styles.itemTitle} numberOfLines={2}>{item.title}</Text>
                       <Text style={styles.price}>${item.price}</Text>
-                    )}
+                    </View>
                     <Text style={styles.status}>{item.status}</Text>
+                    {!isApprovedSold && !['approved', 'rejected', 'sold'].includes(String(item.status)) && (
+                      <Pressable onPress={() => navigation.navigate('EditListing', { listing: item })} style={{ marginTop: 6 }}>
+                        <Text style={styles.editLink}>Edit listing →</Text>
+                      </Pressable>
+                    )}
                   </View>
-
-                  {showApprovedSoldView && (
-                    <View style={{ marginTop: 8 }}>
-                      {finalTxn ? (
-                        <>
-                          <Text style={{ fontWeight: '700' }}>Final Deal</Text>
-                          <Text>Final Price: {finalTxn.offered_price != null ? `$${Number(finalTxn.offered_price).toFixed(2)}` : '—'}</Text>
-                          <Text>Buyer: {finalTxn.buyer_email ?? finalTxn.buyer_id}</Text>
-                        </>
-                      ) : (
-                        <Text style={{ color: '#6B7280' }}>No final transaction found.</Text>
-                      )}
-
-                      {/* show images thumbnails if available */}
-                      {item.listing_images && item.listing_images.length > 0 && (
-                        <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                          {item.listing_images.slice(0,3).map((img: any, idx: number) => (
-                            <Image key={idx} source={{ uri: img.image_url }} style={{ width: 64, height: 64, borderRadius: 6, marginRight: 8 }} />
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  )}
-                  {(() => {
-                    const listingFinal = item && ['approved','rejected','sold'].includes(String(item.status));
-                    const hideEdit = statusFilter === 'approved_sold' || listingFinal;
-                    return !hideEdit ? (
-                      <Button variant="ghost" onPress={() => navigation.navigate('EditListing', { listing: item })}>Edit</Button>
-                    ) : null;
-                  })()}
-
-                  {/* Pending transactions for this listing (if any) */}
-                  {(item.pending_transactions || []).length > 0 && (
-                    <View style={{ marginTop: 12 }}>
-                      <Text style={{ fontWeight: '700', marginBottom: 6 }}>Requests</Text>
-                      {(item.pending_transactions || []).filter((t: any) => {
-                        // when showing approved_sold view, exclude the final transaction from the requests list
-                        if (statusFilter === 'approved_sold' && (item.final_transaction && t.id === item.final_transaction.id)) return false;
-                        return true;
-                      }).map((t: any) => {
-                        const txnFinal = t.status && t.status !== 'pending';
-                        const listingFinal = item && ['approved','rejected','sold'].includes(String(item.status));
-
-                        // In approved_sold view we've already shown final transaction above, avoid duplicating it
-                        if (statusFilter === 'approved_sold' && (txnFinal || listingFinal)) {
-                          return null;
-                        }
-
-                        // still pending: allow approve/reject
-                        if (!txnFinal) {
-                          return (
-                            <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontSize: 14 }}>Buyer: {t.buyer_email ?? t.buyer_id}</Text>
-                                <Text style={{ fontSize: 13 }}>Offer: {t.offered_price != null ? `$${Number(t.offered_price).toFixed(2)}` : '—'}</Text>
-                                {t.notes ? <Text style={{ fontSize: 12, color: '#374151' }}>{t.notes}</Text> : null}
-                                <Text style={{ fontSize: 12, color: '#6B7280' }}>{new Date(t.created_at).toLocaleString()}</Text>
-                              </View>
-                              <View style={{ flexDirection: 'row', gap: 8 }}>
-                                <Button style={{ marginRight: 8 }} onPress={async () => {
-                                    try {
-                                      await respondTransaction(t.id, 'approved');
-                                      Alert.alert('Success', 'Transaction approved');
-                                      setListings((prev) => prev.map((l: any) => l.id === item.id ? { ...l, status: 'sold', pending_transactions: (l.pending_transactions || []).filter((pt: any) => pt.id !== t.id) } : l));
-                                    } catch (err: any) {
-                                      Alert.alert('Error', err.message || 'Failed to approve');
-                                    }
-                                  }}>Approve</Button>
-                                <Button variant="ghost" onPress={async () => {
-                                  try {
-                                    await respondTransaction(t.id, 'rejected');
-                                    Alert.alert('Success', 'Transaction rejected');
-                                    setListings((prev) => prev.map((l: any) => l.id === item.id ? { ...l, pending_transactions: (l.pending_transactions || []).filter((pt: any) => pt.id !== t.id) } : l));
-                                  } catch (err: any) {
-                                    Alert.alert('Error', err.message || 'Failed to reject');
-                                  }
-                                }}>Reject</Button>
-                              </View>
-                            </View>
-                          );
-                        }
-
-                        // For non-pending transactions (shouldn't appear here normally), show a concise final line
-                        return (
-                          <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 14 }}>Buyer: {t.buyer_email ?? t.buyer_id}</Text>
-                              <Text style={{ fontSize: 13 }}>Offer: {t.offered_price != null ? `$${Number(t.offered_price).toFixed(2)}` : '—'}</Text>
-                              <Text style={{ fontSize: 12, color: '#6B7280' }}>{t.status}</Text>
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
                 </View>
-              </View>
+
+                {isApprovedSold && finalTxn && (
+                  <View style={styles.panel}>
+                    <View style={styles.panelRow}>
+                      <Text style={styles.panelLabel}>Buyer</Text>
+                      <Text style={styles.panelValue}>{finalTxn.buyer_email ?? '—'}</Text>
+                    </View>
+                    <View style={styles.panelRow}>
+                      <Text style={styles.panelLabel}>Final price</Text>
+                      <Text style={styles.panelValue}>${Number(finalTxn.offered_price ?? 0).toFixed(2)}</Text>
+                    </View>
+                    {Number(finalTxn.ghg_discount ?? 0) > 0 && (
+                      <View style={styles.panelRow}>
+                        <Text style={[styles.panelLabel, { color: theme.colors.primary }]}>GHG discount</Text>
+                        <Text style={[styles.panelValue, { color: theme.colors.primary }]}>−${Number(finalTxn.ghg_discount).toFixed(2)}</Text>
+                      </View>
+                    )}
+
+                    {finalTxn.status === 'approved' && (
+                      <View style={[styles.dualConfirmBox, { backgroundColor: '#FDF6EA' }]}>
+                        <Text style={[styles.actionTitle, { color: '#B45309' }]}>Awaiting confirmation</Text>
+                        <Text style={styles.actionSub}>
+                          {finalTxn.buyer_confirmed ? '✓' : '○'} Buyer   ·   {finalTxn.seller_confirmed ? '✓' : '○'} You
+                        </Text>
+                        {!finalTxn.seller_confirmed && (
+                          <Button
+                            size="md"
+                            fullWidth
+                            style={{ marginTop: 10 }}
+                            disabled={confirmingId === finalTxn.id}
+                            onPress={async () => {
+                              setConfirmingId(finalTxn.id);
+                              try {
+                                await confirmTransaction(finalTxn.id);
+                                Alert.alert('Confirmed', 'Your confirmation has been recorded.');
+                                refreshUser();
+                                fetchMyListings();
+                              } catch (err: any) {
+                                Alert.alert('Error', err.message || 'Failed to confirm');
+                              } finally {
+                                setConfirmingId(null);
+                              }
+                            }}
+                          >
+                            {confirmingId === finalTxn.id ? 'Confirming…' : 'Confirm sold'}
+                          </Button>
+                        )}
+                        {finalTxn.seller_confirmed && !finalTxn.buyer_confirmed && (
+                          <Text style={styles.waitingText}>Waiting for buyer to confirm…</Text>
+                        )}
+                      </View>
+                    )}
+
+                    {finalTxn.status === 'completed' && (
+                      <View style={[styles.dualConfirmBox, { backgroundColor: theme.colors.primarySoft }]}>
+                        <Text style={[styles.actionTitle, { color: theme.colors.primary }]}>Sale complete</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {!isApprovedSold && (item.pending_transactions || []).length > 0 && (
+                  <View style={styles.panel}>
+                    <Text style={styles.offersHeader}>
+                      {(item.pending_transactions || []).length} offer{(item.pending_transactions || []).length > 1 ? 's' : ''}
+                    </Text>
+                    {(item.pending_transactions || []).map((t: any) => {
+                      if (t.status && t.status !== 'pending') return null;
+                      return (
+                        <View key={t.id} style={styles.offerRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.offerBuyer} numberOfLines={1}>{t.buyer_email ?? 'Buyer'}</Text>
+                            <Text style={styles.offerPrice}>${Number(t.offered_price ?? 0).toFixed(2)}</Text>
+                            {t.notes ? <Text style={styles.offerNote} numberOfLines={2}>{t.notes}</Text> : null}
+                          </View>
+                          <View style={{ gap: 6 }}>
+                            <Button
+                              size="sm"
+                              onPress={async () => {
+                                try {
+                                  await respondTransaction(t.id, 'approved');
+                                  Alert.alert('Approved', 'Offer accepted');
+                                  fetchMyListings();
+                                } catch (err: any) {
+                                  Alert.alert('Error', err.message || 'Failed');
+                                }
+                              }}
+                            >Accept</Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={async () => {
+                                try {
+                                  await respondTransaction(t.id, 'rejected');
+                                  fetchMyListings();
+                                } catch (err: any) {
+                                  Alert.alert('Error', err.message || 'Failed');
+                                }
+                              }}
+                            >Decline</Button>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </Card>
             );
           }}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>You haven't listed anything yet.</Text>
-              <Button onPress={() => navigation.navigate('CreateListing')} style={styles.createButton}>Create Your First Listing</Button>
+            <View style={{ alignItems: 'center', marginTop: 60 }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.colors.text, marginBottom: 6 }}>Nothing here</Text>
+              <Text style={{ fontSize: 14, color: theme.colors.muted, marginBottom: 16 }}>Create a listing to start selling.</Text>
+              <Button onPress={() => navigation.navigate('CreateListing')}>Create listing</Button>
             </View>
           }
         />
-          </>
       )}
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F7F8FA' },
-  loader: { flex: 1, justifyContent: 'center' },
-  listContent: { padding: 16, paddingBottom: 24 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  image: {
-    width: '100%',
-    height: 160,
-    backgroundColor: '#E5E7EB',
-  },
-  cardBody: { padding: 14 },
-  title: { fontSize: 18, fontWeight: '700', marginBottom: 4 },
-  desc: { fontSize: 14, color: '#6B7280', marginBottom: 8 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  filterRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center' },
-  price: { fontSize: 16, fontWeight: '700', color: '#059669' },
-  status: { fontSize: 13, fontWeight: '600', color: '#6B7280', textTransform: 'capitalize' },
-  editButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  editButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  approveButton: { backgroundColor: '#10B981', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginRight: 8 },
-  rejectButton: { backgroundColor: '#EF4444', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12 },
-  emptyContainer: { alignItems: 'center', marginTop: 60 },
-  emptyText: { fontSize: 16, color: '#9CA3AF', marginBottom: 16 },
-  createButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  createButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-});
+const makeStyles = (theme: any) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: theme.colors.background },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+    },
+    backArrow: { fontSize: 24, color: theme.colors.text },
+    topTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text },
+    plusText: { fontSize: 28, color: theme.colors.primary, fontWeight: '300' },
+
+    filterRow: {
+      flexDirection: 'row',
+      paddingHorizontal: 16,
+      paddingBottom: 12,
+      gap: 8,
+      flexWrap: 'wrap',
+    },
+    filterChip: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: theme.radii.pill,
+      backgroundColor: theme.colors.surfaceAlt,
+    },
+    filterChipActive: { backgroundColor: theme.colors.text },
+    filterChipText: { fontSize: 13, color: theme.colors.text, fontWeight: '600' },
+    filterChipTextActive: { color: '#FFFFFF' },
+
+    thumb: { width: 78, height: 78, borderRadius: theme.radii.md },
+    itemTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: theme.colors.text, marginRight: 8 },
+    price: { fontSize: 15, fontWeight: '700', color: theme.colors.primary },
+    status: { fontSize: 12, color: theme.colors.muted, textTransform: 'capitalize', marginTop: 2 },
+    editLink: { fontSize: 13, color: theme.colors.primary, fontWeight: '600' },
+
+    panel: { borderTopWidth: 1, borderTopColor: theme.colors.border, padding: 12 },
+    panelRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
+    panelLabel: { fontSize: 13, color: theme.colors.muted },
+    panelValue: { fontSize: 13, color: theme.colors.text, fontWeight: '600' },
+
+    dualConfirmBox: { marginTop: 10, padding: 12, borderRadius: theme.radii.md },
+    actionTitle: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
+    actionSub: { fontSize: 12, color: theme.colors.muted },
+    waitingText: { fontSize: 12, color: theme.colors.muted, marginTop: 6, fontStyle: 'italic' },
+
+    offersHeader: { fontSize: 12, fontWeight: '700', color: theme.colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+    offerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    offerBuyer: { fontSize: 13, color: theme.colors.text, fontWeight: '600' },
+    offerPrice: { fontSize: 15, fontWeight: '700', color: theme.colors.text },
+    offerNote: { fontSize: 12, color: theme.colors.muted, marginTop: 2 },
+  });
