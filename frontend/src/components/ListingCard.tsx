@@ -62,7 +62,7 @@ function ListingCard({ item, onPressMessage, onPressRequest, onPressEdit, isOwne
         {ghgSaved > 0 ? (
           <View style={styles.ghgBadge}>
             <Text style={styles.ghgText}>
-              🌱 Saves {ghgSaved.toFixed(1)} kg CO₂e {isOwner ? 'vs. landfill' : 'vs. new'}
+              Saves {ghgSaved.toFixed(1)} kg CO₂e {isOwner ? 'vs. landfill' : 'vs. new'}
             </Text>
           </View>
         ) : null}

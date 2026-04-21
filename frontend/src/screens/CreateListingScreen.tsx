@@ -151,7 +151,7 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
                 onPress={analyzeWithAI}
                 disabled={analyzing || images.length === 0}
               >
-                {analyzing ? 'Analyzing…' : '✨ AI autofill'}
+                {analyzing ? 'Analyzing…' : 'AI autofill'}
               </Button>
             </View>
             {images.length === 0 && (
@@ -172,7 +172,7 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
 
             {ghg && (
               <Card variant="outlined" padding="md" style={styles.ghgCard}>
-                <Text style={styles.ghgTitle}>🌱 Environmental impact</Text>
+                <Text style={styles.ghgTitle}>Environmental impact</Text>
                 <View style={styles.ghgRow}>
                   <Text style={styles.ghgLabel}>Buyer saves</Text>
                   <Text style={styles.ghgValue}>{totalBuyerGhg!.toFixed(1)} kg CO₂e</Text>
