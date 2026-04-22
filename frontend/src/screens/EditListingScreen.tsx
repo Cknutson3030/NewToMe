@@ -34,6 +34,33 @@ const convertToJpeg = async (uri: string): Promise<{ uri: string; mimeType: stri
   return { uri: result.uri, mimeType: 'image/jpeg' };
 };
 
+const extensionForMimeType = (mimeType: string): string => {
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'jpg';
+};
+
+const confirmAction = async (title: string, message: string, confirmText: string): Promise<boolean> => {
+  if (Platform.OS === 'web') {
+    if (typeof globalThis.confirm === 'function') {
+      return globalThis.confirm(`${title}\n\n${message}`);
+    }
+    return false;
+  }
+
+  return new Promise((resolve) => {
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: confirmText, style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+};
+
 interface ExistingImage {
   id: string;
   image_url: string;
@@ -73,24 +100,18 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
   const maxImages = 5;
 
   const handleRemoveExistingImage = async (imageId: string) => {
-    Alert.alert('Remove image', 'Are you sure you want to remove this image?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          setDeletingImageId(imageId);
-          try {
-            await deleteListingImage(listing.id, imageId);
-            setExistingImages((prev) => prev.filter((img) => img.id !== imageId));
-          } catch (err) {
-            Alert.alert('Error', err instanceof Error ? err.message : 'Failed to remove image');
-          } finally {
-            setDeletingImageId(null);
-          }
-        },
-      },
-    ]);
+    const confirmed = await confirmAction('Remove image', 'Are you sure you want to remove this image?', 'Remove');
+    if (!confirmed) return;
+
+    setDeletingImageId(imageId);
+    try {
+      await deleteListingImage(listing.id, imageId);
+      setExistingImages((prev) => prev.filter((img) => img.id !== imageId));
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to remove image');
+    } finally {
+      setDeletingImageId(null);
+    }
   };
 
   const handleRemoveNewImage = (index: number) => {
@@ -144,11 +165,18 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
         uri = converted.uri;
         mimeType = converted.mimeType;
       }
-      formData.append('images', {
-        uri,
-        name: `photo_${Date.now()}_${i}.jpg`,
-        type: mimeType,
-      } as unknown as Blob);
+      if (Platform.OS === 'web') {
+        const fileResponse = await fetch(uri);
+        const fileBlob = await fileResponse.blob();
+        const finalMimeType = fileBlob.type || mimeType || 'image/jpeg';
+        formData.append('images', fileBlob, `photo_${Date.now()}_${i}.${extensionForMimeType(finalMimeType)}`);
+      } else {
+        formData.append('images', {
+          uri,
+          name: `photo_${Date.now()}_${i}.${extensionForMimeType(mimeType || 'image/jpeg')}`,
+          type: mimeType || 'image/jpeg',
+        } as unknown as Blob);
+      }
     }
     await uploadListingImages(listing.id, formData);
   };
@@ -184,25 +212,19 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
   };
 
   const remove = async () => {
-    Alert.alert('Delete listing', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          setLoading(true);
-          try {
-            await apiDeleteListing(listing.id);
-            Alert.alert('Deleted', 'Listing has been deleted.');
-            navigation.goBack();
-          } catch (err) {
-            Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
-          } finally {
-            setLoading(false);
-          }
-        },
-      },
-    ]);
+    const confirmed = await confirmAction('Delete listing', 'This cannot be undone.', 'Delete');
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      await apiDeleteListing(listing.id);
+      Alert.alert('Deleted', 'Listing has been deleted.');
+      navigation.goBack();
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const styles = makeStyles(theme);
@@ -218,7 +240,7 @@ export default function EditListingScreen({ route, navigation }: { route: any; n
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()} disabled={Platform.OS === 'web'}>
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             <Text style={styles.sectionLabel}>
               Photos ({totalImages}/{maxImages})

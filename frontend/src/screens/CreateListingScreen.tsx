@@ -16,6 +16,12 @@ const convertToJpeg = async (uri: string): Promise<{ uri: string; mimeType: stri
   return { uri: result.uri, mimeType: 'image/jpeg' };
 };
 
+const extensionForMimeType = (mimeType: string): string => {
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'jpg';
+};
+
 export default function CreateListingScreen({ navigation }: { navigation: any }) {
   const { theme } = useTheme();
   const [title, setTitle] = useState('');
@@ -81,13 +87,20 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
       if (!mimeType || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
         const c = await convertToJpeg(uri); uri = c.uri; mimeType = c.mimeType;
       }
-      formData.append('images', { uri, name: `photo_${Date.now()}_${i}.jpg`, type: mimeType } as unknown as Blob);
+      if (Platform.OS === 'web') {
+        const fileResponse = await fetch(uri);
+        const fileBlob = await fileResponse.blob();
+        const finalMimeType = fileBlob.type || mimeType || 'image/jpeg';
+        formData.append('images', fileBlob, `photo_${Date.now()}_${i}.${extensionForMimeType(finalMimeType)}`);
+      } else {
+        formData.append('images', {
+          uri,
+          name: `photo_${Date.now()}_${i}.${extensionForMimeType(mimeType || 'image/jpeg')}`,
+          type: mimeType || 'image/jpeg',
+        } as unknown as Blob);
+      }
     }
-    try {
-      await uploadListingImages(listingId, formData);
-    } catch (err) {
-      Alert.alert('Error', `Failed to upload images: ${err instanceof Error ? err.message : 'Unknown'}`);
-    }
+    await uploadListingImages(listingId, formData);
   };
 
   const createListing = async () => {
@@ -105,8 +118,23 @@ export default function CreateListingScreen({ navigation }: { navigation: any })
           ghg_end_of_life_kg: ghg.end_of_life_kg,
         } : {}),
       });
-      if (images.length > 0) await uploadImages(data.data.id);
-      Alert.alert('Listed!', 'Your item is now live.');
+      let imageUploadError: unknown = null;
+      if (images.length > 0) {
+        try {
+          await uploadImages(data.data.id);
+        } catch (err) {
+          imageUploadError = err;
+        }
+      }
+
+      if (imageUploadError) {
+        Alert.alert(
+          'Listing created',
+          `Your listing was posted, but image upload failed: ${imageUploadError instanceof Error ? imageUploadError.message : 'Unknown error'}`,
+        );
+      } else {
+        Alert.alert('Listed!', 'Your item is now live.');
+      }
       navigation.goBack();
     } catch (err) {
       Alert.alert('Error', err instanceof Error ? err.message : 'Network error');
