@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,19 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { Card, Button } from '../components/ui';
 
-export default function LoginScreen({ navigation }: { navigation: any }) {
+export default function LoginScreen({ navigation, route }: { navigation: any; route: any }) {
   const { signIn } = useAuth();
   const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (route?.params?.accountCreated) {
+      Alert.alert('Success', 'Account created successfully');
+      navigation.setParams({ accountCreated: undefined });
+    }
+  }, [navigation, route?.params?.accountCreated]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {

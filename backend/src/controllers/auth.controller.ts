@@ -22,15 +22,26 @@ export const signup: RequestHandler = async (req, res, next) => {
     });
 
     if (error) {
+      if (/database error (creating|saving) new user/i.test(error.message)) {
+        throw new AppError(
+          500,
+          "Sign up is temporarily unavailable due to a database signup trigger issue. Apply migration 009_fix_auth_signup_profile_trigger.sql and retry."
+        );
+      }
       throw new AppError(400, error.message);
     }
 
-    await supabaseAdmin
+    const { error: profileUpsertError } = await supabaseAdmin
       .from("profiles")
       .upsert(
         { id: data.user.id, wallet_balance: 1000 },
         { onConflict: "id", ignoreDuplicates: true },
       );
+
+    if (profileUpsertError) {
+      // Do not fail signup if profile hydration is delayed by DB policy/trigger drift.
+      console.warn("[auth.signup] profile upsert warning:", profileUpsertError.message);
+    }
 
     // Sign the user in immediately so we can return a session
     // Use supabaseAnon so we don't contaminate supabaseAdmin's in-memory session
