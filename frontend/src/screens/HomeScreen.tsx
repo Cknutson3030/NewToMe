@@ -103,6 +103,13 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   useEffect(() => { fetchListings(false); }, []);
 
   useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchListings(false);
+    });
+    return unsubscribe;
+  }, [navigation, fetchListings]);
+
+  useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => fetchListings(false), 450);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };

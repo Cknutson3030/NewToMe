@@ -41,7 +41,7 @@ export default function SignUpScreen({ navigation }: { navigation: any }) {
       if (error) {
         Alert.alert('Sign Up Failed', error.message);
       } else {
-        Alert.alert('Welcome!', 'Your account has been created.');
+        navigation.replace('Login', { accountCreated: true });
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'An unexpected error occurred');
